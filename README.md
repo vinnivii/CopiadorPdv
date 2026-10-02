@@ -199,24 +199,3 @@ Saída principal do build:
 ```text
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
-
-Na release **v2.11.0**, o executável da saída acima é disponibilizado com o nome `ResetadorDePdvV2.11.0.exe`.
-
-Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o `ResetadorDePdvV2.11.0.exe` baixado da release, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
-
-## Observações de segurança
-
-- A senha de suporte está incorporada ao código conforme o requisito de automação. Ela pode ser recuperada por alguém com acesso ao executável, portanto a distribuição deve ficar restrita aos técnicos autorizados.
-- Os arquivos com Cliente ID e Cliente Secret podem conter dados sensíveis e devem ser armazenados e descartados conforme a política da empresa.
-- As rotinas modificam programas instalados, pastas, serviços e o Registro do Windows; por isso o executável exige privilégios administrativos.
-- A elevação administrativa não remove bloqueios de arquivos nem substitui permissões ACL explícitas. Caso uma pasta continue negando acesso após 30 tentativas, o log informa que ela deve ser verificada quanto a processos, antivírus ou permissões específicas.
-
-## Defender e assinatura digital
-
-Não existe um mecanismo legítimo que garanta que um executável administrativo nunca gere alerta no Microsoft Defender ou no SmartScreen. Para distribuição corporativa:
-
-1. assine todas as versões com um certificado Authenticode confiável e carimbo de tempo SHA-256;
-2. mantenha a mesma identidade de assinatura para acumular reputação;
-3. distribua por um canal corporativo confiável;
-4. envie falsos positivos para o portal oficial da Microsoft;
-5. não desative o Defender nem crie exclusões globais como parte da aplicação.
