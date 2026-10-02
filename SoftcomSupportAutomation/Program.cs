@@ -13,6 +13,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -198,7 +199,7 @@ namespace SoftcomSupportAutomation
                 Location = new Point(20, 640),
                 Size = new Size(180, 20),
                 ForeColor = TextMuted,
-                Text = "CENTRAL V2  •  2.10.0"
+                Text = "CENTRAL V2  •  2.11.0"
             };
             var sidebarCredit = new Label
             {
@@ -369,9 +370,14 @@ namespace SoftcomSupportAutomation
             pdvAutomationComboBox.SelectedIndexChanged += (sender, args) =>
             {
                 var option = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
-                startButton.Text = option != null && option.Mode == PdvAutomationMode.CleanReinstall
+                bool cleanReinstall = option != null && option.Mode == PdvAutomationMode.CleanReinstall;
+                startButton.Text = cleanReinstall
                     ? "Executar Reinstalação Limpa"
                     : "Executar Reset / Instalação";
+                pdvDescription.Text = cleanReinstall
+                    ? "Desinstala e instala a versão selecionada, sem capturas, backups ou alterações no AppData."
+                    : "Automações de manutenção, preservação de configurações e instalação do caixa.";
+                UpdatePdvDllOption(!automationRunning);
             };
             backupButton.Text = "Atualizar SoftcomBackup";
             var backupGroup = new Panel
@@ -837,8 +843,8 @@ namespace SoftcomSupportAutomation
                 return;
             }
 
-            updateDllsRequested = updateDllsCheckBox.Checked;
             selectedPdvAutomationMode = selectedAutomation.Mode;
+            updateDllsRequested = selectedPdvAutomationMode == PdvAutomationMode.FullReset && updateDllsCheckBox.Checked;
             selectedPdvDownloadUrl = selectedVersion.DownloadUrl;
             selectedPdvVersionName = selectedVersion.DisplayName;
             selectedPdvExpectedSha256 = selectedVersion.Sha256;
@@ -1069,7 +1075,7 @@ namespace SoftcomSupportAutomation
                     backupNavigationButton.Enabled = enabled;
                     utilitiesNavigationButton.Enabled = enabled;
                     downloadsNavigationButton.Enabled = enabled;
-                    updateDllsCheckBox.Enabled = enabled;
+                    UpdatePdvDllOption(enabled);
                     pdvAutomationComboBox.Enabled = enabled;
                     pdvVersionComboBox.Enabled = enabled;
                     backupAutomationComboBox.Enabled = enabled;
@@ -1086,25 +1092,47 @@ namespace SoftcomSupportAutomation
             backupNavigationButton.Enabled = enabled;
             utilitiesNavigationButton.Enabled = enabled;
             downloadsNavigationButton.Enabled = enabled;
-            updateDllsCheckBox.Enabled = enabled;
+            UpdatePdvDllOption(enabled);
             pdvAutomationComboBox.Enabled = enabled;
             pdvVersionComboBox.Enabled = enabled;
             backupAutomationComboBox.Enabled = enabled;
             stopButton.Enabled = automationRunning && !stopRequested;
         }
 
+        private void UpdatePdvDllOption(bool actionsEnabled)
+        {
+            var option = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
+            updateDllsCheckBox.Enabled = actionsEnabled && option != null && option.Mode == PdvAutomationMode.FullReset;
+        }
+
         private void RunWorkflow()
         {
+            Task<string> pdvPackageTask = null;
+            bool fullReset = selectedPdvAutomationMode == PdvAutomationMode.FullReset;
+            int captureInProgress = 0;
+            int packageReadyDuringCaptureLogged = 0;
+            var packageCancellation = new CancellationTokenSource();
             try
             {
-                runFolder = Path.Combine(@"C:\Softcom\ResetCaixa\Prints", DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"));
+                runFolder = Path.Combine(fullReset ? @"C:\Softcom\ResetCaixa\Prints" : @"C:\Softcom\ResetCaixa\ReinstalacaoLimpa",
+                    DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"));
                 Directory.CreateDirectory(runFolder);
                 logFile = Path.Combine(runFolder, "processo.log");
                 File.WriteAllText(logFile, string.Empty, new UTF8Encoding(true));
-                WriteLog("Início do processo. Pasta dos prints: " + runFolder);
-                WriteLog(selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall
-                    ? "Automação selecionada: Reinstalação Limpa."
-                    : "Automação selecionada: Reset Completo / Instalação do PDV.");
+                WriteLog("Iniciando download antecipado do PDV: " + selectedPdvVersionName + ".");
+                pdvPackageTask = Task.Run(() =>
+                {
+                    string preparedMsi = PreparePdvPackage(packageCancellation.Token);
+                    if (Volatile.Read(ref captureInProgress) != 0 &&
+                        Interlocked.Exchange(ref packageReadyDuringCaptureLogged, 1) == 0)
+                        WriteLog("Pacote do PDV preparado e aguardando conclusão da captura.");
+                    return preparedMsi;
+                });
+                WriteLog("Download do PDV executando em paralelo.");
+                WriteLog("Início do processo. Pasta do log: " + runFolder);
+                WriteLog(fullReset
+                    ? "Automação selecionada: Reset Completo / Instalação do PDV."
+                    : "Automação selecionada: Reinstalação Limpa.");
                 Assembly runningAssembly = Assembly.GetExecutingAssembly();
                 WriteLog("Central em execução: versão " + runningAssembly.GetName().Version +
                     ", caminho " + runningAssembly.Location + ".");
@@ -1126,13 +1154,16 @@ namespace SoftcomSupportAutomation
                 WriteLog("Arquitetura detectada: Windows " +
                     (Environment.Is64BitOperatingSystem ? "64 bits" : "32 bits") +
                     ", processo " + (Environment.Is64BitProcess ? "64 bits" : "32 bits") + ".");
-                workflowRunning = true;
-                cacheBackupDialogClosed = 0;
-                rpcUnavailableDialogClosed = 0;
                 activeSoftshopProcessId = 0;
-                var dialogWatcher = new Thread(WatchAndDismissKnownSoftshopDialogs) { IsBackground = true };
-                dialogWatcher.SetApartmentState(ApartmentState.STA);
-                dialogWatcher.Start();
+                if (fullReset)
+                {
+                    workflowRunning = true;
+                    cacheBackupDialogClosed = 0;
+                    rpcUnavailableDialogClosed = 0;
+                    var dialogWatcher = new Thread(WatchAndDismissKnownSoftshopDialogs) { IsBackground = true };
+                    dialogWatcher.SetApartmentState(ApartmentState.STA);
+                    dialogWatcher.Start();
+                }
 
                 ThrowIfCancellationRequested();
                 StopSoftshop();
@@ -1142,44 +1173,78 @@ namespace SoftcomSupportAutomation
                     WriteLog("Verificando caminho do Softshop: " + candidate);
                 string[] existingPdvExecutables = softshopCandidates.Where(File.Exists).ToArray();
                 string existingPdvExecutable = existingPdvExecutables.FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(existingPdvExecutable))
+                string msiPath;
+                if (fullReset)
                 {
-                    WriteLog("Softshop Caixa encontrado em: " + existingPdvExecutable);
-                    if (existingPdvExecutables.Length > 1)
-                        WriteLog("Aviso: foram encontradas instalações nas duas pastas; ambas serão preservadas após a desinstalação: " +
-                            string.Join("; ", existingPdvExecutables) + ".");
-                    bool backupLocalAppData = selectedPdvAutomationMode == PdvAutomationMode.FullReset;
-                    WriteLog(backupLocalAppData
-                        ? "Modo Reset Completo: pastas do LocalAppData serão preservadas por renomeação."
-                        : "Modo Reinstalação Limpa: pastas do LocalAppData serão mantidas sem alterações.");
+                    if (!string.IsNullOrWhiteSpace(existingPdvExecutable))
+                    {
+                        WriteLog("Softshop Caixa encontrado em: " + existingPdvExecutable);
+                        if (existingPdvExecutables.Length > 1)
+                            WriteLog("Aviso: foram encontradas instalações nas duas pastas; ambas serão preservadas após a desinstalação: " +
+                                string.Join("; ", existingPdvExecutables) + ".");
+                        WriteLog("Modo Reset Completo: pastas do LocalAppData serão preservadas por renomeação.");
+                        WriteLog("Capturando configurações enquanto o pacote é baixado.");
+                        ThrowIfCancellationRequested();
+                        Volatile.Write(ref captureInProgress, 1);
+                        try
+                        {
+                            if (pdvPackageTask.Status == TaskStatus.RanToCompletion &&
+                                Interlocked.Exchange(ref packageReadyDuringCaptureLogged, 1) == 0)
+                                WriteLog("Pacote do PDV preparado e aguardando conclusão da captura.");
+                            CaptureConfigurationTabs(existingPdvExecutable);
+                        }
+                        finally { Volatile.Write(ref captureInProgress, 0); }
+                        ThrowIfCancellationRequested();
+                        StopSoftshop();
+                    }
+                    else
+                    {
+                        WriteLog("Softshop.exe não encontrado em nenhum caminho compatível com a arquitetura do Windows.");
+                        WriteLog("Modo de instalação nova ativado: captura, desinstalação e renomeação de pastas serão ignoradas.");
+                    }
+                    msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
+                        existingPdvExecutable != null
+                            ? "Captura concluída. Aguardando preparação do pacote do PDV."
+                            : "Aguardando preparação do pacote do PDV.",
+                        existingPdvExecutable != null
+                            ? "Não foi possível preparar o novo pacote do PDV. A instalação atual foi mantida."
+                            : "Não foi possível preparar o pacote do PDV para a instalação nova.");
+                    if (existingPdvExecutable != null)
+                    {
+                        ThrowIfCancellationRequested();
+                        UninstallAllSoftshopEntries();
+                        ThrowIfCancellationRequested();
+                        StopSoftshop();
+                        ThrowIfCancellationRequested();
+                        BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName), true);
+                    }
                     ThrowIfCancellationRequested();
-                    CaptureConfigurationTabs(existingPdvExecutable);
-                    ThrowIfCancellationRequested();
-                    StopSoftshop();
-                    ThrowIfCancellationRequested();
-                    UninstallAllSoftshopEntries();
-                    ThrowIfCancellationRequested();
-                    StopSoftshop();
-                    ThrowIfCancellationRequested();
-                    BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName), backupLocalAppData);
+                    if (updateDllsRequested) UpdateSoftcomDlls();
+                    else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
                 }
                 else
                 {
-                    WriteLog("Softshop.exe não encontrado em nenhum caminho compatível com a arquitetura do Windows.");
-                    WriteLog("Modo de instalação nova ativado: captura, desinstalação e renomeação de pastas serão ignoradas.");
+                    WriteLog("Modo Reinstalação Limpa: somente desinstalação e instalação; sem capturas, backups ou atualização de DLLs.");
+                    WriteLog("Pastas da instalação e do LocalAppData não serão renomeadas pela Central.");
+                    ThrowIfCancellationRequested();
+                    UninstallAllSoftshopEntries();
+                    msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
+                        "Aguardando preparação do pacote do PDV após a desinstalação.",
+                        "Não foi possível preparar o novo pacote do PDV após a desinstalação. Verifique o log e tente novamente.");
                 }
                 ThrowIfCancellationRequested();
-                if (updateDllsRequested) UpdateSoftcomDlls();
-                else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
-                ThrowIfCancellationRequested();
-                DownloadAndInstallMsi();
-                ThrowIfCancellationRequested();
-                OpenNewInstallationAtConfiguration();
-                ThrowIfCancellationRequested();
-                OpenPrintFolder();
+                InstallPdvMsi(msiPath);
+                if (fullReset)
+                {
+                    ThrowIfCancellationRequested();
+                    OpenNewInstallationAtConfiguration();
+                    ThrowIfCancellationRequested();
+                    OpenPrintFolder();
+                }
                 ThrowIfCancellationRequested();
                 WriteLog("Concluído com sucesso.");
-                ShowFinal("Processo concluído.\r\nPrints e log: " + runFolder, MessageBoxIcon.Information);
+                ShowFinal(fullReset ? "Processo concluído.\r\nPrints e log: " + runFolder
+                    : "Reinstalação Limpa concluída.\r\nLog: " + runFolder, MessageBoxIcon.Information);
             }
             catch (OperationCanceledException)
             {
@@ -1190,12 +1255,19 @@ namespace SoftcomSupportAutomation
             catch (Exception ex)
             {
                 WriteLog("ERRO: " + ex);
-                ShowFinal("O processo foi interrompido. Consulte o log em:\r\n" + runFolder, MessageBoxIcon.Error);
+                ShowFinal(ex.Message + "\r\n\r\nO processo foi interrompido. Consulte o log em:\r\n" + runFolder, MessageBoxIcon.Error);
             }
             finally
             {
                 activeSoftshopProcessId = 0;
                 workflowRunning = false;
+                packageCancellation.Cancel();
+                if (pdvPackageTask != null)
+                {
+                    // A próxima execução só pode começar após o download/extração anterior encerrar.
+                    try { pdvPackageTask.GetAwaiter().GetResult(); } catch { }
+                }
+                packageCancellation.Dispose();
                 FinishAutomation();
             }
         }
@@ -2163,7 +2235,7 @@ namespace SoftcomSupportAutomation
             string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
             string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
             WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.10.0");
+            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.11.0");
             if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
                 throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
             WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
@@ -2309,36 +2381,87 @@ namespace SoftcomSupportAutomation
             return start >= 0 && end > start ? uninstallString.Substring(start, end - start + 1) : null;
         }
 
-        private void DownloadAndInstallMsi()
+        private string PreparePdvPackage(CancellationToken cancellationToken)
         {
-            ThrowIfCancellationRequested();
+            ThrowIfCancellationRequested(cancellationToken);
             string resetFolder = @"C:\Softcom\ResetCaixa";
             string downloadFolder = Path.Combine(resetFolder, "Download");
             Directory.CreateDirectory(downloadFolder);
             string archivePath = Path.Combine(downloadFolder,
                 "PDV_SoftshopCaixa_Selecionado" + selectedPdvArchiveExtension);
             string msiPath = Path.Combine(downloadFolder, "SetupSoftshopFrenteLoja.msi");
-            WriteLog("Baixando pacote do PDV: " + selectedPdvVersionName + ".");
-            System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-            DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.10.0");
-            if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
-                throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");
-            WriteLog("Download concluído: " + new FileInfo(archivePath).Length + " bytes.");
-            if (!string.IsNullOrWhiteSpace(selectedPdvExpectedSha256))
+            // Remover apenas as três saídas conhecidas, sem tocar em backups ou outros diretórios.
+            foreach (string name in new[] { "PDV_SoftshopCaixa_Selecionado.zip", "PDV_SoftshopCaixa_Selecionado.rar", "SetupSoftshopFrenteLoja.msi" })
             {
-                WriteLog("Validando integridade SHA-256 do pacote.");
-                string actualSha256 = ComputeFileSha256WithCancellation(archivePath);
-                if (!string.Equals(actualSha256, selectedPdvExpectedSha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("O SHA-256 do pacote baixado não corresponde ao publicado no GitHub. A instalação foi cancelada.");
-                WriteLog("SHA-256 validado com sucesso.");
+                ThrowIfCancellationRequested(cancellationToken);
+                string staleFile = Path.Combine(downloadFolder, name);
+                if (File.Exists(staleFile)) File.Delete(staleFile);
             }
-            else
+            try
             {
-                WriteLog("Pacote do servidor atual não possui SHA-256 cadastrado; continuando com a validação de conteúdo.");
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.11.0", cancellationToken);
+                ThrowIfCancellationRequested(cancellationToken);
+                if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
+                    throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");
+                WriteLog("Download do PDV concluído: " + new FileInfo(archivePath).Length + " bytes.");
+                if (!string.IsNullOrWhiteSpace(selectedPdvExpectedSha256))
+                {
+                    WriteLog("Validando integridade SHA-256 do pacote.");
+                    string actualSha256 = ComputeFileSha256WithCancellation(archivePath, cancellationToken);
+                    if (!string.Equals(actualSha256, selectedPdvExpectedSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("O SHA-256 do pacote baixado não corresponde ao publicado no GitHub. A instalação foi cancelada.");
+                    WriteLog("SHA-256 validado com sucesso.");
+                }
+                else
+                {
+                    WriteLog("Pacote do servidor atual não possui SHA-256 cadastrado; continuando com a validação de conteúdo.");
+                }
+                WriteLog("Extraindo SetupSoftshopFrenteLoja.msi do pacote " + selectedPdvArchiveExtension.ToUpperInvariant() + ".");
+                ExtractMsiFromArchive(archivePath, msiPath, cancellationToken);
+                ThrowIfCancellationRequested(cancellationToken);
+                if (!File.Exists(msiPath) || new FileInfo(msiPath).Length == 0)
+                    throw new InvalidOperationException("O arquivo SetupSoftshopFrenteLoja.msi não foi extraído ou está vazio.");
+                WriteLog("Pacote do PDV preparado para instalação.");
+                return msiPath;
             }
-            WriteLog("Extraindo SetupSoftshopFrenteLoja.msi do pacote " + selectedPdvArchiveExtension.ToUpperInvariant() + ".");
-            ExtractMsiFromArchive(archivePath, msiPath);
-            if (!File.Exists(msiPath)) throw new FileNotFoundException("O arquivo SetupSoftshopFrenteLoja.msi não foi encontrado dentro do pacote compactado.");
+            catch
+            {
+                // Nunca deixar uma extração incompleta ou um pacote inválido para a próxima tentativa.
+                try { if (File.Exists(msiPath)) File.Delete(msiPath); } catch { }
+                try { if (File.Exists(archivePath)) File.Delete(archivePath); } catch { }
+                throw;
+            }
+        }
+
+        private string WaitForPreparedPdvPackage(Task<string> packageTask, string waitingMessage, string failureMessage)
+        {
+            try
+            {
+                ThrowIfCancellationRequested();
+                if (!packageTask.IsCompleted) WriteLog(waitingMessage);
+                else if (packageTask.Status == TaskStatus.RanToCompletion)
+                    WriteLog("Pacote já estava pronto; continuando imediatamente.");
+                // RunWorkflow está em uma thread de background; a interface continua disponível.
+                string msiPath = packageTask.GetAwaiter().GetResult();
+                ThrowIfCancellationRequested();
+                if (!File.Exists(msiPath) || new FileInfo(msiPath).Length == 0)
+                    throw new InvalidOperationException("O MSI preparado não está disponível para instalação.");
+                return msiPath;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                WriteLog(failureMessage);
+                throw new InvalidOperationException(failureMessage, ex);
+            }
+        }
+
+        private void InstallPdvMsi(string msiPath)
+        {
+            ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(msiPath) || !File.Exists(msiPath) || new FileInfo(msiPath).Length == 0)
+                throw new InvalidOperationException("O MSI preparado não está disponível para instalação.");
             WriteLog("Instalando Softshop Caixa.");
             RunCommand("msiexec.exe", "/i \"" + msiPath + "\" /qn /norestart", 600000, "instalação");
         }
@@ -2393,7 +2516,7 @@ namespace SoftcomSupportAutomation
                 return BitConverter.ToString(sha256.ComputeHash(stream)).Replace("-", string.Empty).ToLowerInvariant();
         }
 
-        private string ComputeFileSha256WithCancellation(string filePath)
+        private string ComputeFileSha256WithCancellation(string filePath, CancellationToken cancellationToken = default(CancellationToken))
         {
             using (var stream = File.OpenRead(filePath))
             using (var sha256 = SHA256.Create())
@@ -2402,17 +2525,19 @@ namespace SoftcomSupportAutomation
                 int bytesRead;
                 while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    ThrowIfCancellationRequested();
+                    ThrowIfCancellationRequested(cancellationToken);
                     sha256.TransformBlock(buffer, 0, bytesRead, buffer, 0);
                 }
+                ThrowIfCancellationRequested(cancellationToken);
                 sha256.TransformFinalBlock(new byte[0], 0, 0);
                 return BitConverter.ToString(sha256.Hash).Replace("-", string.Empty).ToLowerInvariant();
             }
         }
 
-        private void DownloadFileWithCancellation(string address, string destination, string userAgent)
+        private void DownloadFileWithCancellation(string address, string destination, string userAgent,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
-            ThrowIfCancellationRequested();
+            ThrowIfCancellationRequested(cancellationToken);
             if (File.Exists(destination)) File.Delete(destination);
             using (var completed = new ManualResetEvent(false))
             using (var client = new System.Net.WebClient())
@@ -2429,13 +2554,13 @@ namespace SoftcomSupportAutomation
                 client.DownloadFileAsync(new Uri(address), destination);
                 while (!completed.WaitOne(250))
                 {
-                    if (!stopRequested) continue;
+                    if (!stopRequested && !cancellationToken.IsCancellationRequested) continue;
                     client.CancelAsync();
                     completed.WaitOne(5000);
                     try { if (File.Exists(destination)) File.Delete(destination); } catch { }
                     throw new OperationCanceledException("Download cancelado pelo usuário.");
                 }
-                if (stopRequested || downloadCancelled)
+                if (stopRequested || cancellationToken.IsCancellationRequested || downloadCancelled)
                 {
                     try { if (File.Exists(destination)) File.Delete(destination); } catch { }
                     throw new OperationCanceledException("Download cancelado pelo usuário.");
@@ -2448,9 +2573,10 @@ namespace SoftcomSupportAutomation
             }
         }
 
-        private void ThrowIfCancellationRequested()
+        private void ThrowIfCancellationRequested(CancellationToken cancellationToken = default(CancellationToken))
         {
             if (stopRequested) throw new OperationCanceledException("Execução cancelada pelo usuário.");
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         private void SleepWithCancellation(int milliseconds)
@@ -2499,9 +2625,10 @@ namespace SoftcomSupportAutomation
             try { if (process != null && !process.HasExited) process.Kill(); } catch { }
         }
 
-        private void ExtractMsiFromArchive(string archivePath, string destinationMsi)
+        private void ExtractMsiFromArchive(string archivePath, string destinationMsi,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
-            ThrowIfCancellationRequested();
+            ThrowIfCancellationRequested(cancellationToken);
             string expectedName = Path.GetFileName(destinationMsi);
             try
             {
@@ -2517,11 +2644,12 @@ namespace SoftcomSupportAutomation
                         int bytesRead;
                         while ((bytesRead = source.Read(buffer, 0, buffer.Length)) > 0)
                         {
-                            ThrowIfCancellationRequested();
+                            ThrowIfCancellationRequested(cancellationToken);
                             destination.Write(buffer, 0, bytesRead);
                         }
                     }
                 }
+                ThrowIfCancellationRequested(cancellationToken);
             }
             catch (OperationCanceledException)
             {

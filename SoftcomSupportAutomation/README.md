@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.10.0**
+Versão atual: **2.11.0**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -13,9 +13,9 @@ O botão global **Parar execução** fica disponível enquanto uma automação e
 
 | Automação | Finalidade |
 | --- | --- |
-| Reset Completo / Instalação do PDV | Quando o PDV existe, captura as configurações, desinstala e preserva por renomeação a pasta da instalação e as duas pastas do LocalAppData. Quando não existe, instala diretamente a versão selecionada. |
-| Reinstalação Limpa | Reutiliza o fluxo de captura, desinstalação e instalação do PDV, preservando por renomeação somente a pasta da instalação. As duas pastas do LocalAppData permanecem intactas. |
-| Atualização do SetupSoftcomDLLs | Opção adicional dos dois modos do PDV que remove versões anteriores e instala o pacote mais recente antes da instalação do caixa. |
+| Reset Completo / Instalação do PDV | Inicia o download em paralelo à captura. Só desinstala e renomeia a instalação e o LocalAppData após o novo pacote estar validado e o MSI extraído. Sem PDV existente, segue em instalação nova. |
+| Reinstalação Limpa | Inicia o download em paralelo à desinstalação e instala a versão selecionada. Sem capturas, backups, renomeação de pastas, atualização de DLLs ou abertura automática do PDV. |
+| Atualização do SetupSoftcomDLLs | Opção exclusiva do Reset Completo que remove versões anteriores e instala o pacote mais recente antes da instalação do caixa. |
 | Atualização do SoftcomBackup | Extrai e executa o script PowerShell oficial incorporado ao EXE. |
 | Ajuste Update RDP | Executa o ajuste de confirmação de dados do cliente RDP no Windows 11. |
 | Reinicialização do Softconnect | Finaliza o processo atual e abre o Softconnect novamente. |
@@ -25,34 +25,51 @@ Os scripts PowerShell e Batch são incorporados ao executável sem alterações.
 
 ## Fluxo do PDV
 
-Na página **Softshop Caixa**, selecione **Reset Completo / Instalação do PDV** ou **Reinstalação Limpa**. Os dois modos compartilham o mesmo fluxo; a diferença está nas pastas preservadas após a desinstalação:
+Na página **Softshop Caixa**, selecione **Reset Completo / Instalação do PDV** ou **Reinstalação Limpa**. Nos dois modos, o download da versão selecionada é a primeira etapa do atendimento e ocorre em background, com recursos nativos do .NET Framework. A preparação valida o arquivo, confere o SHA-256 quando cadastrado e extrai `SetupSoftshopFrenteLoja.msi`. Download, SHA-256 e extração são executados uma única vez por atendimento; a instalação reutiliza o MSI já preparado.
 
-- **Reset Completo:** renomeia/preserva a pasta da instalação e `%LOCALAPPDATA%\Softcom Tecnologia` e `%LOCALAPPDATA%\Softcom_Tecnologia`.
-- **Reinstalação Limpa:** renomeia/preserva somente a pasta da instalação. A Central não renomeia, move, apaga, recria ou limpa as duas pastas do LocalAppData; elas permanecem com os mesmos nomes e dados.
+### Reset Completo
 
-O log registra a automação selecionada e, quando há uma instalação existente, informa o tratamento das pastas do LocalAppData.
+1. Inicia a preparação do pacote do PDV em background e encerra os processos `Softshop.exe`.
+2. Localiza a instalação existente nos caminhos de 32 e 64 bits e abre o Softshop Caixa.
+3. Localiza o campo **Senha**, preenche a senha de suporte e envia `F11`, sem clicar em **Logar**.
+4. Trata o aviso de RPC conforme a rotina existente, percorre as abas e subabas e salva os prints das configurações.
+5. Exibe as senhas das telas SQL Server e E-Mail quando possível e salva as credenciais Pix e Quero Bônus em `Credenciais_APIs_Softcom.txt`.
+6. Encerra o Softshop e aguarda a preparação do pacote caso ainda esteja em andamento. Se o pacote ficar pronto durante a captura, registra isso e continua capturando normalmente.
+7. Somente após confirmar download, SHA-256 quando aplicável e MSI extraído, desinstala todas as entradas registradas de **Softshop Caixa**.
+8. Preserva por renomeação a pasta da instalação e `%LOCALAPPDATA%\Softcom Tecnologia` e `%LOCALAPPDATA%\Softcom_Tecnologia`. Usa os sufixos `_`, `_1`, `_2` etc., sem sobrescrever backups; mantém as novas tentativas por até 30 segundos em caso de bloqueio temporário.
+9. Quando selecionado, atualiza `SetupSoftcomDLLs`.
+10. Instala silenciosamente o MSI já preparado, sem repetir o download.
+11. Abre a nova instalação, preenche a senha, envia `F11` e deixa as Configurações abertas.
+12. Abre a pasta dos prints e do log.
 
-1. Encerra qualquer processo `softshop.exe` existente.
-2. Se o executável instalado existir, abre o Softshop Caixa.
-3. Quando há instalação existente, localiza o campo **Senha**, preenche a senha de suporte e envia `F11`, sem clicar em **Logar**.
-4. Se o Softshop exibir o aviso **O servidor RPC não está disponível**, valida o título, o texto e o processo de origem e clica em **OK** automaticamente.
-5. Quando há instalação existente, percorre as abas e subabas disponíveis e salva uma imagem PNG de cada tela.
-6. Exibe as senhas das telas SQL Server e E-Mail quando o respectivo controle existir.
-7. Copia Cliente ID e Cliente Secret das integrações Pix e Quero Bônus para `Credenciais_APIs_Softcom.txt`.
-8. Quando há instalação existente, encerra o Softshop e desinstala silenciosamente todas as versões registradas como **Softshop Caixa**.
-9. Renomeia a pasta remanescente da instalação usando os sufixos `_`, `_1`, `_2` e assim por diante, sem sobrescrever backups anteriores. No Reset Completo, também renomeia as duas pastas do LocalAppData; na Reinstalação Limpa, mantém essas pastas intactas. Se uma pasta ainda estiver bloqueada logo após a desinstalação, repete a operação por até 30 segundos.
-10. Quando selecionado, atualiza o `SetupSoftcomDLLs` antes de reinstalar o PDV.
-11. Baixa o pacote ZIP ou RAR da versão selecionada, valida o SHA-256 quando cadastrado, extrai somente `SetupSoftshopFrenteLoja.msi` e instala silenciosamente.
-12. Abre a nova instalação, preenche a senha, envia `F11` e deixa o painel de Configurações aberto.
-13. Abre a pasta que contém os prints e o log do atendimento.
+Se o download, o SHA-256 ou a extração falharem, a captura pode terminar, mas o PDV existente **não é desinstalado**. O log e a mensagem final informam: “Não foi possível preparar o novo pacote do PDV. A instalação atual foi mantida.”
 
-Se `Softshop.exe` não existir nos caminhos verificados no início da rotina, a automação entra no **modo de instalação nova**, independentemente da opção selecionada. Nesse modo, ela não tenta capturar configurações, desinstalar o PDV, renomear a pasta da instalação ou alterar o AppData: respeita a opção de atualização das DLLs, baixa a versão escolhida, instala o caixa e abre a nova instalação diretamente nas Configurações.
+Quando `Softshop.exe` não existe nos caminhos verificados, o Reset entra em **instalação nova**: pula captura, desinstalação e renomeação de pastas, aguarda o pacote, respeita a atualização opcional das DLLs e instala e abre o caixa nas Configurações.
+
+### Reinstalação Limpa
+
+1. Inicia a preparação do pacote em background.
+2. Encerra os processos `Softshop.exe`, verifica os caminhos da instalação e desinstala todas as entradas registradas de **Softshop Caixa**, enquanto o pacote é preparado.
+3. Aguarda o resultado da preparação, incluindo validação do arquivo, SHA-256 quando cadastrado e extração do MSI.
+4. Instala a versão selecionada e informa a conclusão.
+
+A Central não abre o PDV antigo ou o novo, não preenche senha, não envia `F11`, não tira prints e não salva credenciais. Não faz backup, não renomeia ou move a pasta da instalação e não altera as duas pastas do LocalAppData. Não atualiza `SetupSoftcomDLLs` e não abre pasta de prints.
+
+O checkbox de DLLs fica desabilitado nesse modo, mantendo sua seleção para quando o técnico voltar ao Reset Completo. O log da Reinstalação Limpa fica separado dos prints do Reset.
+
+É intencional que a desinstalação aconteça antes de o pacote ficar pronto. Se a preparação falhar após essa etapa, o técnico é informado e nenhum arquivo inválido é instalado.
+
+### Cancelamento da preparação em paralelo
+
+**Parar execução** e o fechamento da janela cancelam o workflow e a preparação do pacote. Arquivos parciais de download ou extração são removidos, e a instalação seguinte não começa. Se outra etapa do workflow falhar, a preparação em andamento também é cancelada. A Central aguarda a tarefa de preparação encerrar antes de liberar outra execução ou fechar, evitando tarefas órfãs e dois downloads no mesmo arquivo.
+
+Antes de cada preparação, apenas as saídas antigas `PDV_SoftshopCaixa_Selecionado.zip`, `PDV_SoftshopCaixa_Selecionado.rar` e `SetupSoftshopFrenteLoja.msi` são removidas da pasta `C:\Softcom\ResetCaixa\Download`.
 
 ### Caminho do PDV por arquitetura
 
-O caminho não é fixado no código. A rotina sempre testa `C:\Program Files\Softcom Tecnologia\Softshop Caixa\Softshop.exe` e `C:\Program Files (x86)\Softcom Tecnologia\Softshop Caixa\Softshop.exe`. Em Windows de 32 bits, prioriza `Program Files`; em Windows de 64 bits, prioriza `Program Files (x86)`. Diretórios inexistentes são simplesmente ignorados. A localização prioritária encontrada é usada para a captura; se houver cópias nas duas pastas, ambas são registradas no log e preservadas por renomeação após a desinstalação. Depois da instalação, os dois caminhos são verificados novamente.
+O caminho não é fixado no código. A rotina sempre testa `C:\Program Files\Softcom Tecnologia\Softshop Caixa\Softshop.exe` e `C:\Program Files (x86)\Softcom Tecnologia\Softshop Caixa\Softshop.exe`. Em Windows de 32 bits, prioriza `Program Files`; em Windows de 64 bits, prioriza `Program Files (x86)`. Diretórios inexistentes são simplesmente ignorados. No Reset Completo, a localização prioritária encontrada é usada para a captura; se houver cópias nas duas pastas, ambas são registradas no log e preservadas por renomeação após a desinstalação. Depois da instalação, os dois caminhos são verificados novamente para abrir o caixa. A Reinstalação Limpa não renomeia pastas nem abre o caixa.
 
-### Roteiro de capturas
+### Roteiro de capturas do Reset Completo
 
 - Configurações Iniciais: Web Service ou SQL Server;
 - Tela de Vendas;
@@ -151,6 +168,7 @@ SoftcomSupportAutomation/
 | Caminho | Conteúdo |
 | --- | --- |
 | `C:\Softcom\ResetCaixa\Prints\<data-hora>` | Prints do PDV, credenciais copiadas e `processo.log`. |
+| `C:\Softcom\ResetCaixa\ReinstalacaoLimpa\<data-hora>` | Somente `processo.log` da Reinstalação Limpa, sem prints ou credenciais. |
 | `C:\Softcom\ResetCaixa\Download` | Pacote ZIP/RAR e MSI do Softshop Caixa. |
 | `C:\Softcom\ResetCaixa\DLLs` | RAR e MSI do SetupSoftcomDLLs. |
 | `C:\Softcom\ResetCaixa\SoftcomBackup\<data-hora>` | Log da atualização do SoftcomBackup. |
@@ -166,7 +184,7 @@ SoftcomSupportAutomation/
 - acesso aos endereços de download dos instaladores;
 - quando o Softshop já estiver instalado, ele deve usar a estrutura padrão `Softcom Tecnologia\Softshop Caixa` dentro do `Program Files` correspondente à arquitetura; se não estiver instalado, a rotina segue em modo de instalação nova.
 
-A automação visual controla a janela ativa. Durante qualquer modo do PDV, o técnico não deve utilizar teclado ou mouse até a conclusão das capturas e da abertura da nova instalação; o botão **Parar execução** é a única interação prevista durante esse trecho.
+A automação visual do Reset Completo controla a janela ativa. Durante as capturas e a abertura da nova instalação, o técnico não deve utilizar teclado ou mouse; o botão **Parar execução** é a única interação prevista durante esse trecho. A Reinstalação Limpa não executa automação visual do PDV.
 
 ## Compilação
 
@@ -182,7 +200,9 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, distribua somente o `ResetadorDePdvV2.exe` da saída acima, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
+Na release **v2.11.0**, o executável da saída acima é disponibilizado com o nome `ResetadorDePdvV2.11.0.exe`.
+
+Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o `ResetadorDePdvV2.11.0.exe` baixado da release, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
 
 ## Observações de segurança
 

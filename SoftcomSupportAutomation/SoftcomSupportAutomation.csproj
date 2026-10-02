@@ -10,9 +10,9 @@
     <Company>Marcus Silva - Teresina</Company>
     <Authors>Marcus Silva - Teresina</Authors>
     <Copyright>by Marcus Silva - Teresina</Copyright>
-    <Version>2.10.0</Version>
-    <FileVersion>2.10.0.0</FileVersion>
-    <AssemblyVersion>2.10.0.0</AssemblyVersion>
+    <Version>2.11.0</Version>
+    <FileVersion>2.11.0.0</FileVersion>
+    <AssemblyVersion>2.11.0.0</AssemblyVersion>
     <LangVersion>latest</LangVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
