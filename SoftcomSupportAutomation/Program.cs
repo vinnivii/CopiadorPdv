@@ -48,6 +48,20 @@ namespace SoftcomSupportAutomation
         private const string RdpScriptResource = "SoftcomSupportAutomation.Scripts.AJUSTE_UPDATE_RDP.bat";
         private const string SoftconnectScriptResource = "SoftcomSupportAutomation.Scripts.Finalizar e Reiniciar o Softconect.bat";
         private const string PrintQueueScriptResource = "SoftcomSupportAutomation.Scripts.LimparFilaDeImpressao.bat";
+        private static readonly DownloadOption[] DownloadOptions =
+        {
+            new DownloadOption("Backup Utility", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/382/"),
+            new DownloadOption("Softshop Caixa (PDV)", DownloadUrl),
+            new DownloadOption("Setup DLLs", DllDownloadUrl),
+            new DownloadOption("Emissor", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/17/"),
+            new DownloadOption("Nuvem Fiscal", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/220/"),
+            new DownloadOption("Setup Softshop", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/264/"),
+            new DownloadOption("SQL Server 2014", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/249/"),
+            new DownloadOption("QR Code DLL", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/110/"),
+            new DownloadOption("SPED.NET", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/262/"),
+            new DownloadOption("Office 2003", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/350/"),
+            new DownloadOption("WinRAR", "http://177.43.232.2:25123/helptools2/public/core/arquivo/download/id/28/")
+        };
         private readonly Button startButton = new Button();
         private readonly Button stopButton = new Button();
         private readonly Button backupButton = new Button();
@@ -57,6 +71,7 @@ namespace SoftcomSupportAutomation
         private readonly Button softshopNavigationButton = new Button();
         private readonly Button backupNavigationButton = new Button();
         private readonly Button utilitiesNavigationButton = new Button();
+        private readonly Button downloadsNavigationButton = new Button();
         private readonly CheckBox updateDllsCheckBox = new CheckBox();
         private readonly ComboBox pdvAutomationComboBox = new ComboBox();
         private readonly ComboBox pdvVersionComboBox = new ComboBox();
@@ -74,6 +89,7 @@ namespace SoftcomSupportAutomation
         private volatile int activeSoftshopProcessId;
         private int screenshotNumber;
         private bool updateDllsRequested;
+        private PdvAutomationMode selectedPdvAutomationMode = PdvAutomationMode.FullReset;
         private string selectedPdvDownloadUrl = DownloadUrl;
         private string selectedPdvVersionName = "Mais recente disponível";
         private string selectedPdvExpectedSha256;
@@ -175,13 +191,14 @@ namespace SoftcomSupportAutomation
             ConfigureNavigationButton(softshopNavigationButton, "Softshop Caixa", 130);
             ConfigureNavigationButton(backupNavigationButton, "Softcom Backup", 178);
             ConfigureNavigationButton(utilitiesNavigationButton, "Utilitários", 226);
+            ConfigureNavigationButton(downloadsNavigationButton, "Central Downloads", 274);
             var sidebarVersion = new Label
             {
                 AutoSize = false,
                 Location = new Point(20, 640),
                 Size = new Size(180, 20),
                 ForeColor = TextMuted,
-                Text = "CENTRAL V2  •  2.9.0"
+                Text = "CENTRAL V2  •  2.10.0"
             };
             var sidebarCredit = new Label
             {
@@ -197,6 +214,7 @@ namespace SoftcomSupportAutomation
             sidebar.Controls.Add(softshopNavigationButton);
             sidebar.Controls.Add(backupNavigationButton);
             sidebar.Controls.Add(utilitiesNavigationButton);
+            sidebar.Controls.Add(downloadsNavigationButton);
             sidebar.Controls.Add(sidebarVersion);
             sidebar.Controls.Add(sidebarCredit);
 
@@ -241,7 +259,10 @@ namespace SoftcomSupportAutomation
                 Text = "Escolha a automação"
             };
             ConfigureComboBox(pdvAutomationComboBox, new Point(22, 97), new Size(420, 30));
-            pdvAutomationComboBox.Items.Add("Reset Completo / Instalação do PDV");
+            pdvAutomationComboBox.Items.Add(new PdvAutomationOption(
+                PdvAutomationMode.FullReset, "Reset Completo / Instalação do PDV"));
+            pdvAutomationComboBox.Items.Add(new PdvAutomationOption(
+                PdvAutomationMode.CleanReinstall, "Reinstalação Limpa"));
             pdvAutomationComboBox.SelectedIndex = 0;
 
             var pdvConfigurationPanel = new Panel
@@ -281,6 +302,10 @@ namespace SoftcomSupportAutomation
             ConfigureComboBox(pdvVersionComboBox, new Point(360, 39), new Size(334, 30));
             pdvVersionComboBox.Items.Add(new PdvVersionOption(
                 "Mais recente disponível (servidor atual)", DownloadUrl));
+            pdvVersionComboBox.Items.Add(new PdvVersionOption(
+                "8.40.3.0 (GitHub)",
+                "https://github.com/vinnivii/PDVs/releases/download/pdvs2/PDV_SoftshopCaixa.8.40.3.0.zip",
+                "96ae04de6b32615c89975e9ec7aa590f4d98ec6b94aafd7f6335510036db06c3"));
             pdvVersionComboBox.Items.Add(new PdvVersionOption(
                 "8.40 (GitHub)",
                 "https://github.com/vinnivii/PDVs/releases/download/pdvs/PDV_SoftshopCaixa.8.40.zip",
@@ -341,6 +366,13 @@ namespace SoftcomSupportAutomation
             startButton.Size = new Size(260, 40);
             StyleActionButton(startButton, PrimaryAccent);
             startButton.Click += StartButton_Click;
+            pdvAutomationComboBox.SelectedIndexChanged += (sender, args) =>
+            {
+                var option = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
+                startButton.Text = option != null && option.Mode == PdvAutomationMode.CleanReinstall
+                    ? "Executar Reinstalação Limpa"
+                    : "Executar Reset / Instalação";
+            };
             backupButton.Text = "Atualizar SoftcomBackup";
             var backupGroup = new Panel
             {
@@ -456,6 +488,57 @@ namespace SoftcomSupportAutomation
             utilitiesGroup.Controls.Add(softconnectCard);
             utilitiesGroup.Controls.Add(printQueueCard);
 
+            var downloadsGroup = new Panel
+            {
+                Location = new Point(0, 0),
+                Size = new Size(766, 334),
+                BackColor = DarkPanel
+            };
+            ApplyPanelBorder(downloadsGroup);
+            var downloadsTitle = new Label
+            {
+                AutoSize = false,
+                Location = new Point(22, 15),
+                Size = new Size(420, 24),
+                ForeColor = TextPrimary,
+                Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
+                Text = "Central Downloads"
+            };
+            var downloadsDescription = new Label
+            {
+                AutoSize = false,
+                Location = new Point(22, 43),
+                Size = new Size(720, 24),
+                ForeColor = TextSecondary,
+                Text = "Acesso rápido aos principais instaladores e ferramentas utilizadas pelo suporte."
+            };
+            var downloadsHint = new Label
+            {
+                AutoSize = false,
+                Location = new Point(22, 67),
+                Size = new Size(720, 18),
+                ForeColor = TextMuted,
+                Text = "Os links são abertos no navegador padrão."
+            };
+            var downloadsList = new Panel
+            {
+                Location = new Point(22, 88),
+                Size = new Size(720, 224),
+                AutoScroll = true,
+                BackColor = DarkPanel
+            };
+            int downloadsPerColumn = (DownloadOptions.Length + 1) / 2;
+            for (int index = 0; index < DownloadOptions.Length; index++)
+            {
+                Panel card = CreateDownloadCard(DownloadOptions[index]);
+                card.Location = new Point((index / downloadsPerColumn) * 370, (index % downloadsPerColumn) * 38);
+                downloadsList.Controls.Add(card);
+            }
+            downloadsGroup.Controls.Add(downloadsTitle);
+            downloadsGroup.Controls.Add(downloadsDescription);
+            downloadsGroup.Controls.Add(downloadsHint);
+            downloadsGroup.Controls.Add(downloadsList);
+
             var logTitle = new Label
             {
                 AutoSize = true,
@@ -511,12 +594,15 @@ namespace SoftcomSupportAutomation
             productHost.Controls.Add(pdvGroup);
             productHost.Controls.Add(backupGroup);
             productHost.Controls.Add(utilitiesGroup);
+            productHost.Controls.Add(downloadsGroup);
             softshopNavigationButton.Click += (sender, args) => ShowProductPage(
-                pdvGroup, softshopNavigationButton, pdvGroup, backupGroup, utilitiesGroup);
+                pdvGroup, softshopNavigationButton, pdvGroup, backupGroup, utilitiesGroup, downloadsGroup);
             backupNavigationButton.Click += (sender, args) => ShowProductPage(
-                backupGroup, backupNavigationButton, pdvGroup, backupGroup, utilitiesGroup);
+                backupGroup, backupNavigationButton, pdvGroup, backupGroup, utilitiesGroup, downloadsGroup);
             utilitiesNavigationButton.Click += (sender, args) => ShowProductPage(
-                utilitiesGroup, utilitiesNavigationButton, pdvGroup, backupGroup, utilitiesGroup);
+                utilitiesGroup, utilitiesNavigationButton, pdvGroup, backupGroup, utilitiesGroup, downloadsGroup);
+            downloadsNavigationButton.Click += (sender, args) => ShowProductPage(
+                downloadsGroup, downloadsNavigationButton, pdvGroup, backupGroup, utilitiesGroup, downloadsGroup);
             Controls.Add(sidebar);
             Controls.Add(headerContext);
             Controls.Add(info);
@@ -528,7 +614,7 @@ namespace SoftcomSupportAutomation
             Controls.Add(stopButton);
             Controls.Add(logBox);
             Controls.Add(logHint);
-            ShowProductPage(pdvGroup, softshopNavigationButton, pdvGroup, backupGroup, utilitiesGroup);
+            ShowProductPage(pdvGroup, softshopNavigationButton, pdvGroup, backupGroup, utilitiesGroup, downloadsGroup);
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -609,12 +695,56 @@ namespace SoftcomSupportAutomation
             selectedPage.BringToFront();
 
             foreach (Button button in new[]
-                     { softshopNavigationButton, backupNavigationButton, utilitiesNavigationButton })
+                     { softshopNavigationButton, backupNavigationButton, utilitiesNavigationButton, downloadsNavigationButton })
             {
                 bool selected = button == selectedButton;
                 button.BackColor = selected ? ControlBackground : SidebarBackground;
                 button.ForeColor = selected ? TextPrimary : TextSecondary;
                 button.FlatAppearance.BorderSize = selected ? 1 : 0;
+            }
+        }
+
+        private Panel CreateDownloadCard(DownloadOption option)
+        {
+            var card = new Panel
+            {
+                Size = new Size(350, 34),
+                BackColor = DarkCard
+            };
+            ApplyPanelBorder(card);
+            var nameLabel = new Label
+            {
+                AutoSize = false,
+                Location = new Point(10, 0),
+                Size = new Size(244, 34),
+                ForeColor = TextPrimary,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Text = option.Name
+            };
+            var downloadButton = new Button
+            {
+                Location = new Point(264, 4),
+                Size = new Size(76, 26),
+                Text = "Baixar",
+                AccessibleName = "Baixar " + option.Name
+            };
+            StyleActionButton(downloadButton, Color.FromArgb(55, 55, 55));
+            downloadButton.Click += (sender, args) => OpenDownloadLink(option.Url);
+            card.Controls.Add(nameLabel);
+            card.Controls.Add(downloadButton);
+            return card;
+        }
+
+        private void OpenDownloadLink(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Não foi possível abrir o link de download.\r\n\r\n" + ex.Message,
+                    Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -691,6 +821,14 @@ namespace SoftcomSupportAutomation
                 return;
             }
 
+            var selectedAutomation = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
+            if (selectedAutomation == null)
+            {
+                MessageBox.Show("Selecione a automação do caixa que será executada.", Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             var selectedVersion = pdvVersionComboBox.SelectedItem as PdvVersionOption;
             if (selectedVersion == null)
             {
@@ -700,6 +838,7 @@ namespace SoftcomSupportAutomation
             }
 
             updateDllsRequested = updateDllsCheckBox.Checked;
+            selectedPdvAutomationMode = selectedAutomation.Mode;
             selectedPdvDownloadUrl = selectedVersion.DownloadUrl;
             selectedPdvVersionName = selectedVersion.DisplayName;
             selectedPdvExpectedSha256 = selectedVersion.Sha256;
@@ -929,6 +1068,7 @@ namespace SoftcomSupportAutomation
                     softshopNavigationButton.Enabled = enabled;
                     backupNavigationButton.Enabled = enabled;
                     utilitiesNavigationButton.Enabled = enabled;
+                    downloadsNavigationButton.Enabled = enabled;
                     updateDllsCheckBox.Enabled = enabled;
                     pdvAutomationComboBox.Enabled = enabled;
                     pdvVersionComboBox.Enabled = enabled;
@@ -945,6 +1085,7 @@ namespace SoftcomSupportAutomation
             softshopNavigationButton.Enabled = enabled;
             backupNavigationButton.Enabled = enabled;
             utilitiesNavigationButton.Enabled = enabled;
+            downloadsNavigationButton.Enabled = enabled;
             updateDllsCheckBox.Enabled = enabled;
             pdvAutomationComboBox.Enabled = enabled;
             pdvVersionComboBox.Enabled = enabled;
@@ -961,6 +1102,9 @@ namespace SoftcomSupportAutomation
                 logFile = Path.Combine(runFolder, "processo.log");
                 File.WriteAllText(logFile, string.Empty, new UTF8Encoding(true));
                 WriteLog("Início do processo. Pasta dos prints: " + runFolder);
+                WriteLog(selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall
+                    ? "Automação selecionada: Reinstalação Limpa."
+                    : "Automação selecionada: Reset Completo / Instalação do PDV.");
                 Assembly runningAssembly = Assembly.GetExecutingAssembly();
                 WriteLog("Central em execução: versão " + runningAssembly.GetName().Version +
                     ", caminho " + runningAssembly.Location + ".");
@@ -1004,7 +1148,10 @@ namespace SoftcomSupportAutomation
                     if (existingPdvExecutables.Length > 1)
                         WriteLog("Aviso: foram encontradas instalações nas duas pastas; ambas serão preservadas após a desinstalação: " +
                             string.Join("; ", existingPdvExecutables) + ".");
-                    WriteLog("Executando o fluxo completo de reset.");
+                    bool backupLocalAppData = selectedPdvAutomationMode == PdvAutomationMode.FullReset;
+                    WriteLog(backupLocalAppData
+                        ? "Modo Reset Completo: pastas do LocalAppData serão preservadas por renomeação."
+                        : "Modo Reinstalação Limpa: pastas do LocalAppData serão mantidas sem alterações.");
                     ThrowIfCancellationRequested();
                     CaptureConfigurationTabs(existingPdvExecutable);
                     ThrowIfCancellationRequested();
@@ -1014,7 +1161,7 @@ namespace SoftcomSupportAutomation
                     ThrowIfCancellationRequested();
                     StopSoftshop();
                     ThrowIfCancellationRequested();
-                    BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName));
+                    BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName), backupLocalAppData);
                 }
                 else
                 {
@@ -1871,7 +2018,7 @@ namespace SoftcomSupportAutomation
             }
         }
 
-        private void BackupFolders(IEnumerable<string> softshopInstallDirectories)
+        private void BackupFolders(IEnumerable<string> softshopInstallDirectories, bool backupLocalAppData)
         {
             foreach (string directory in softshopInstallDirectories
                 .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -1880,6 +2027,7 @@ namespace SoftcomSupportAutomation
                 ThrowIfCancellationRequested();
                 MoveToNumberedBackup(directory);
             }
+            if (!backupLocalAppData) return;
             ThrowIfCancellationRequested();
             string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             MoveToNumberedBackup(Path.Combine(local, "Softcom Tecnologia"));
@@ -2015,7 +2163,7 @@ namespace SoftcomSupportAutomation
             string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
             string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
             WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.9.0");
+            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.10.0");
             if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
                 throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
             WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
@@ -2172,7 +2320,7 @@ namespace SoftcomSupportAutomation
             string msiPath = Path.Combine(downloadFolder, "SetupSoftshopFrenteLoja.msi");
             WriteLog("Baixando pacote do PDV: " + selectedPdvVersionName + ".");
             System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-            DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.9.0");
+            DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.10.0");
             if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
                 throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");
             WriteLog("Download concluído: " + new FileInfo(archivePath).Length + " bytes.");
@@ -2535,6 +2683,41 @@ namespace SoftcomSupportAutomation
         {
             var identity = WindowsIdentity.GetCurrent();
             return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+
+        private sealed class DownloadOption
+        {
+            public DownloadOption(string name, string url)
+            {
+                Name = name;
+                Url = url;
+            }
+
+            public string Name { get; private set; }
+            public string Url { get; private set; }
+        }
+
+        private enum PdvAutomationMode
+        {
+            FullReset,
+            CleanReinstall
+        }
+
+        private sealed class PdvAutomationOption
+        {
+            public PdvAutomationOption(PdvAutomationMode mode, string displayName)
+            {
+                Mode = mode;
+                DisplayName = displayName;
+            }
+
+            public PdvAutomationMode Mode { get; private set; }
+            public string DisplayName { get; private set; }
+
+            public override string ToString()
+            {
+                return DisplayName;
+            }
         }
 
         private sealed class PdvVersionOption

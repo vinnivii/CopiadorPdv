@@ -2,19 +2,20 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.9.0**  
+Versão atual: **2.10.0**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
 
-A interface possui uma barra lateral para selecionar **Softshop Caixa**, **Softcom Backup** ou **Utilitários**. Cada produto exibe somente suas próprias automações e configurações. O log permanece disponível na área inferior da janela durante todo o processo.
+A interface possui uma barra lateral para selecionar **Softshop Caixa**, **Softcom Backup**, **Utilitários** ou **Central Downloads**. Cada página exibe suas próprias opções. O log permanece disponível na área inferior da janela durante todo o processo.
 
 O botão global **Parar execução** fica disponível enquanto uma automação está ativa. Ele cancela downloads, interrompe o processo externo iniciado pela central e impede a execução das etapas seguintes. Arquivos de download ou extração incompletos são removidos. Fechar a central pelo `X` durante uma automação solicita essa mesma parada e aguarda a rotina encerrar antes de fechar a janela. A parada não desfaz automaticamente alterações que já tenham sido concluídas por um instalador ou script.
 
 | Automação | Finalidade |
 | --- | --- |
-| Reset ou instalação do Softshop Caixa / PDV | Quando o PDV existe, captura as configurações, desinstala e preserva as pastas. Quando não existe, pula essas etapas e instala diretamente a versão selecionada. |
-| Atualização do SetupSoftcomDLLs | Opção adicional do Reset do PDV que remove versões anteriores e instala o pacote mais recente antes da reinstalação do caixa. |
+| Reset Completo / Instalação do PDV | Quando o PDV existe, captura as configurações, desinstala e preserva por renomeação a pasta da instalação e as duas pastas do LocalAppData. Quando não existe, instala diretamente a versão selecionada. |
+| Reinstalação Limpa | Reutiliza o fluxo de captura, desinstalação e instalação do PDV, preservando por renomeação somente a pasta da instalação. As duas pastas do LocalAppData permanecem intactas. |
+| Atualização do SetupSoftcomDLLs | Opção adicional dos dois modos do PDV que remove versões anteriores e instala o pacote mais recente antes da instalação do caixa. |
 | Atualização do SoftcomBackup | Extrai e executa o script PowerShell oficial incorporado ao EXE. |
 | Ajuste Update RDP | Executa o ajuste de confirmação de dados do cliente RDP no Windows 11. |
 | Reinicialização do Softconnect | Finaliza o processo atual e abre o Softconnect novamente. |
@@ -22,23 +23,30 @@ O botão global **Parar execução** fica disponível enquanto uma automação e
 
 Os scripts PowerShell e Batch são incorporados ao executável sem alterações. Durante a execução, eles são extraídos para `C:\Softcom\ResetCaixa\Scripts` e abertos em uma janela administrativa visível, preservando as mensagens e pausas dos arquivos originais.
 
-## Fluxo do Reset do PDV
+## Fluxo do PDV
+
+Na página **Softshop Caixa**, selecione **Reset Completo / Instalação do PDV** ou **Reinstalação Limpa**. Os dois modos compartilham o mesmo fluxo; a diferença está nas pastas preservadas após a desinstalação:
+
+- **Reset Completo:** renomeia/preserva a pasta da instalação e `%LOCALAPPDATA%\Softcom Tecnologia` e `%LOCALAPPDATA%\Softcom_Tecnologia`.
+- **Reinstalação Limpa:** renomeia/preserva somente a pasta da instalação. A Central não renomeia, move, apaga, recria ou limpa as duas pastas do LocalAppData; elas permanecem com os mesmos nomes e dados.
+
+O log registra a automação selecionada e, quando há uma instalação existente, informa o tratamento das pastas do LocalAppData.
 
 1. Encerra qualquer processo `softshop.exe` existente.
 2. Se o executável instalado existir, abre o Softshop Caixa.
-3. No modo de reset, localiza o campo **Senha**, preenche a senha de suporte e envia `F11`, sem clicar em **Logar**.
+3. Quando há instalação existente, localiza o campo **Senha**, preenche a senha de suporte e envia `F11`, sem clicar em **Logar**.
 4. Se o Softshop exibir o aviso **O servidor RPC não está disponível**, valida o título, o texto e o processo de origem e clica em **OK** automaticamente.
-5. No modo de reset, percorre as abas e subabas disponíveis e salva uma imagem PNG de cada tela.
+5. Quando há instalação existente, percorre as abas e subabas disponíveis e salva uma imagem PNG de cada tela.
 6. Exibe as senhas das telas SQL Server e E-Mail quando o respectivo controle existir.
 7. Copia Cliente ID e Cliente Secret das integrações Pix e Quero Bônus para `Credenciais_APIs_Softcom.txt`.
-8. No modo de reset, encerra o Softshop e desinstala silenciosamente todas as versões registradas como **Softshop Caixa**.
-9. No modo de reset, renomeia as pastas remanescentes usando os sufixos `_`, `_1`, `_2` e assim por diante. Se uma pasta ainda estiver bloqueada logo após a desinstalação, repete a operação por até 30 segundos.
+8. Quando há instalação existente, encerra o Softshop e desinstala silenciosamente todas as versões registradas como **Softshop Caixa**.
+9. Renomeia a pasta remanescente da instalação usando os sufixos `_`, `_1`, `_2` e assim por diante, sem sobrescrever backups anteriores. No Reset Completo, também renomeia as duas pastas do LocalAppData; na Reinstalação Limpa, mantém essas pastas intactas. Se uma pasta ainda estiver bloqueada logo após a desinstalação, repete a operação por até 30 segundos.
 10. Quando selecionado, atualiza o `SetupSoftcomDLLs` antes de reinstalar o PDV.
-11. Baixa o pacote ZIP ou RAR da versão selecionada, extrai somente `SetupSoftshopFrenteLoja.msi` e instala silenciosamente.
+11. Baixa o pacote ZIP ou RAR da versão selecionada, valida o SHA-256 quando cadastrado, extrai somente `SetupSoftshopFrenteLoja.msi` e instala silenciosamente.
 12. Abre a nova instalação, preenche a senha, envia `F11` e deixa o painel de Configurações aberto.
 13. Abre a pasta que contém os prints e o log do atendimento.
 
-Se `Softshop.exe` não existir no caminho esperado no início da rotina, a automação entra no **modo de instalação nova**. Nesse modo, ela não tenta capturar configurações, desinstalar o PDV ou renomear pastas: respeita a opção de atualização das DLLs, baixa a versão escolhida, instala o caixa e abre a nova instalação diretamente nas Configurações.
+Se `Softshop.exe` não existir nos caminhos verificados no início da rotina, a automação entra no **modo de instalação nova**, independentemente da opção selecionada. Nesse modo, ela não tenta capturar configurações, desinstalar o PDV, renomear a pasta da instalação ou alterar o AppData: respeita a opção de atualização das DLLs, baixa a versão escolhida, instala o caixa e abre a nova instalação diretamente nas Configurações.
 
 ### Caminho do PDV por arquitetura
 
@@ -75,8 +83,9 @@ O `Edit` interno do `ComboBox` de usuário é descartado antes da análise das l
 
 ## Seleção da versão do PDV
 
-O Reset Completo possui um `ComboBox` para escolher a versão que será instalada. A opção **Mais recente disponível (servidor atual)** mantém o endereço tradicional, e as seguintes versões estão disponíveis pelo GitHub Releases:
+Os dois modos possuem um `ComboBox` para escolher a versão que será instalada. A opção **Mais recente disponível (servidor atual)** mantém o endereço tradicional, e as seguintes versões estão disponíveis pelo GitHub Releases, nesta ordem:
 
+- 8.40.3.0;
 - 8.40;
 - 8.39.4;
 - 8.38.2;
@@ -89,6 +98,16 @@ O Reset Completo possui um `ComboBox` para escolher a versão que será instalad
 - 8.33.8.
 
 Os pacotes do GitHub são ZIPs e têm o SHA-256 validado antes da extração. O MSI é localizado pelo nome `SetupSoftshopFrenteLoja.msi`, mesmo quando estiver dentro de uma subpasta do arquivo compactado. Se o hash divergir, a instalação é cancelada.
+
+A versão **8.40.3.0 (GitHub)** utiliza o pacote `https://github.com/vinnivii/PDVs/releases/download/pdvs2/PDV_SoftshopCaixa.8.40.3.0.zip`, com SHA-256 `96ae04de6b32615c89975e9ec7aa590f4d98ec6b94aafd7f6335510036db06c3`.
+
+## Central Downloads
+
+A **Central Downloads** reúne 11 atalhos: Backup Utility, Softshop Caixa (PDV), Setup DLLs, Emissor, Nuvem Fiscal, Setup Softshop, SQL Server 2014, QR Code DLL, SPED.NET, Office 2003 e WinRAR.
+
+Cada botão **Baixar** apenas abre a URL cadastrada no navegador padrão do Windows. O navegador realiza o download e decide onde salvar o arquivo. Essa página não baixa arquivos internamente, não cria pastas, não controla progresso e não inicia uma automação. Se não for possível abrir o link, a Central exibe uma mensagem de erro.
+
+Os nomes e links são compilados no próprio EXE, sem arquivo externo de configuração. Não há consultas de rede ou verificação de disponibilidade na abertura da aplicação; o endereço só é aberto quando o técnico clica.
 
 ## Stack do projeto
 
@@ -105,7 +124,8 @@ Os pacotes do GitHub são ZIPs e têm o SHA-256 validado antes da extração. O 
 | Referências do framework | Microsoft.NETFramework.ReferenceAssemblies 1.0.3, somente durante o build |
 | Registro do Windows | `Microsoft.Win32`, consultando as visões de 32 e 64 bits |
 | Instalação e desinstalação | Windows Installer por `msiexec.exe` |
-| Downloads | `System.Net.WebClient`, com cancelamento e limpeza de arquivos parciais |
+| Downloads das automações | `System.Net.WebClient`, com cancelamento e limpeza de arquivos parciais |
+| Atalhos da Central Downloads | `Process.Start` com `UseShellExecute=true`, abrindo o navegador padrão |
 | Scripts administrativos | Windows PowerShell 5.1 e Batch/`cmd.exe`, incorporados como recursos |
 | Build | .NET SDK, MSBuild e NuGet |
 | Plataforma de saída | AnyCPU, com `Prefer32Bit=false` |
@@ -146,7 +166,7 @@ SoftcomSupportAutomation/
 - acesso aos endereços de download dos instaladores;
 - quando o Softshop já estiver instalado, ele deve usar a estrutura padrão `Softcom Tecnologia\Softshop Caixa` dentro do `Program Files` correspondente à arquitetura; se não estiver instalado, a rotina segue em modo de instalação nova.
 
-A automação visual controla a janela ativa. Durante o Reset do PDV, o técnico não deve utilizar teclado ou mouse até a conclusão das capturas e da abertura da nova instalação; o botão **Parar execução** é a única interação prevista durante esse trecho.
+A automação visual controla a janela ativa. Durante qualquer modo do PDV, o técnico não deve utilizar teclado ou mouse até a conclusão das capturas e da abertura da nova instalação; o botão **Parar execução** é a única interação prevista durante esse trecho.
 
 ## Compilação
 
@@ -162,13 +182,7 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Executável preparado para distribuição:
-
-```text
-SoftcomSupportAutomation\bin\Release\V2\ResetadorDePdvV2.9.0.exe
-```
-
-Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável. No cliente, distribua o `ResetadorDePdvV2.9.0.exe`; o .NET Framework 4.8 continua sendo um requisito do Windows.
+Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, distribua somente o `ResetadorDePdvV2.exe` da saída acima, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
 
 ## Observações de segurança
 
