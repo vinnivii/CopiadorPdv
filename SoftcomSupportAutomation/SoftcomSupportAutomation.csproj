@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>SoftcomSupportAutomation</RootNamespace>
+    <AssemblyName>ResetadorDePdvV2</AssemblyName>
+    <AssemblyTitle>Central de Automações Softcom V2 - by Marcus Silva - Teresina</AssemblyTitle>
+    <Product>Central de Automações Softcom V2</Product>
+    <Description>by Marcus Silva - Teresina</Description>
+    <Company>Marcus Silva - Teresina</Company>
+    <Authors>Marcus Silva - Teresina</Authors>
+    <Copyright>by Marcus Silva - Teresina</Copyright>
+    <Version>2.9.0</Version>
+    <FileVersion>2.9.0.0</FileVersion>
+    <AssemblyVersion>2.9.0.0</AssemblyVersion>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\ResetadorDePdv.ico</ApplicationIcon>
+    <Platforms>AnyCPU</Platforms>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="SharpCompress" Version="0.50.4" />
+    <PackageReference Include="Costura.Fody" Version="6.2.0" PrivateAssets="All" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Scripts\Atualizar-SoftcomBackup-v6.ps1" LogicalName="SoftcomSupportAutomation.Scripts.Atualizar-SoftcomBackup-v6.ps1" />
+    <EmbeddedResource Include="Scripts\AJUSTE_UPDATE_RDP.bat" LogicalName="SoftcomSupportAutomation.Scripts.AJUSTE_UPDATE_RDP.bat" />
+    <EmbeddedResource Include="Scripts\Finalizar e Reiniciar o Softconect.bat" LogicalName="SoftcomSupportAutomation.Scripts.Finalizar e Reiniciar o Softconect.bat" />
+    <EmbeddedResource Include="Scripts\LimparFilaDeImpressao.bat" LogicalName="SoftcomSupportAutomation.Scripts.LimparFilaDeImpressao.bat" />
+  </ItemGroup>
+</Project>
