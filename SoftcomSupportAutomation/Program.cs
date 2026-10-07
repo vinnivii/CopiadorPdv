@@ -199,7 +199,7 @@ namespace SoftcomSupportAutomation
                 Location = new Point(20, 640),
                 Size = new Size(180, 20),
                 ForeColor = TextMuted,
-                Text = "CENTRAL V2  •  2.11.0"
+                Text = "CENTRAL V2  •  2.12.0"
             };
             var sidebarCredit = new Label
             {
@@ -264,6 +264,8 @@ namespace SoftcomSupportAutomation
                 PdvAutomationMode.FullReset, "Reset Completo / Instalação do PDV"));
             pdvAutomationComboBox.Items.Add(new PdvAutomationOption(
                 PdvAutomationMode.CleanReinstall, "Reinstalação Limpa"));
+            pdvAutomationComboBox.Items.Add(new PdvAutomationOption(
+                PdvAutomationMode.ConfigurationPrints, "Prints de Configuração"));
             pdvAutomationComboBox.SelectedIndex = 0;
 
             var pdvConfigurationPanel = new Panel
@@ -371,11 +373,16 @@ namespace SoftcomSupportAutomation
             {
                 var option = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
                 bool cleanReinstall = option != null && option.Mode == PdvAutomationMode.CleanReinstall;
-                startButton.Text = cleanReinstall
+                bool configurationPrints = option != null && option.Mode == PdvAutomationMode.ConfigurationPrints;
+                startButton.Text = configurationPrints
+                    ? "Gerar Prints de Configuração"
+                    : cleanReinstall
                     ? "Executar Reinstalação Limpa"
                     : "Executar Reset / Instalação";
-                pdvDescription.Text = cleanReinstall
-                    ? "Desinstala e instala a versão selecionada, sem capturas, backups ou alterações no AppData."
+                pdvDescription.Text = configurationPrints
+                    ? "Captura as configurações do caixa instalado e abre a pasta dos prints ao concluir."
+                    : cleanReinstall
+                    ? "Desinstala, preserva a pasta do caixa e instala a versão selecionada, sem alterar o LocalAppData."
                     : "Automações de manutenção, preservação de configurações e instalação do caixa.";
                 UpdatePdvDllOption(!automationRunning);
             };
@@ -835,20 +842,23 @@ namespace SoftcomSupportAutomation
                 return;
             }
 
-            var selectedVersion = pdvVersionComboBox.SelectedItem as PdvVersionOption;
-            if (selectedVersion == null)
+            if (selectedAutomation.Mode != PdvAutomationMode.ConfigurationPrints)
             {
-                MessageBox.Show("Selecione a versão do caixa que será instalada.", Text,
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                var selectedVersion = pdvVersionComboBox.SelectedItem as PdvVersionOption;
+                if (selectedVersion == null)
+                {
+                    MessageBox.Show("Selecione a versão do caixa que será instalada.", Text,
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                selectedPdvDownloadUrl = selectedVersion.DownloadUrl;
+                selectedPdvVersionName = selectedVersion.DisplayName;
+                selectedPdvExpectedSha256 = selectedVersion.Sha256;
+                selectedPdvArchiveExtension = selectedVersion.ArchiveExtension;
             }
 
             selectedPdvAutomationMode = selectedAutomation.Mode;
             updateDllsRequested = selectedPdvAutomationMode == PdvAutomationMode.FullReset && updateDllsCheckBox.Checked;
-            selectedPdvDownloadUrl = selectedVersion.DownloadUrl;
-            selectedPdvVersionName = selectedVersion.DisplayName;
-            selectedPdvExpectedSha256 = selectedVersion.Sha256;
-            selectedPdvArchiveExtension = selectedVersion.ArchiveExtension;
             PrepareAutomationStart();
             var worker = new Thread(RunWorkflow) { IsBackground = true };
             worker.SetApartmentState(ApartmentState.STA);
@@ -1077,7 +1087,6 @@ namespace SoftcomSupportAutomation
                     downloadsNavigationButton.Enabled = enabled;
                     UpdatePdvDllOption(enabled);
                     pdvAutomationComboBox.Enabled = enabled;
-                    pdvVersionComboBox.Enabled = enabled;
                     backupAutomationComboBox.Enabled = enabled;
                     stopButton.Enabled = automationRunning && !stopRequested;
                 }));
@@ -1094,7 +1103,6 @@ namespace SoftcomSupportAutomation
             downloadsNavigationButton.Enabled = enabled;
             UpdatePdvDllOption(enabled);
             pdvAutomationComboBox.Enabled = enabled;
-            pdvVersionComboBox.Enabled = enabled;
             backupAutomationComboBox.Enabled = enabled;
             stopButton.Enabled = automationRunning && !stopRequested;
         }
@@ -1103,34 +1111,43 @@ namespace SoftcomSupportAutomation
         {
             var option = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
             updateDllsCheckBox.Enabled = actionsEnabled && option != null && option.Mode == PdvAutomationMode.FullReset;
+            pdvVersionComboBox.Enabled = actionsEnabled && option != null && option.Mode != PdvAutomationMode.ConfigurationPrints;
         }
 
         private void RunWorkflow()
         {
             Task<string> pdvPackageTask = null;
             bool fullReset = selectedPdvAutomationMode == PdvAutomationMode.FullReset;
+            bool cleanReinstall = selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall;
+            bool configurationPrints = selectedPdvAutomationMode == PdvAutomationMode.ConfigurationPrints;
+            Thread dialogWatcher = null;
             int captureInProgress = 0;
             int packageReadyDuringCaptureLogged = 0;
             var packageCancellation = new CancellationTokenSource();
             try
             {
-                runFolder = Path.Combine(fullReset ? @"C:\Softcom\ResetCaixa\Prints" : @"C:\Softcom\ResetCaixa\ReinstalacaoLimpa",
+                runFolder = Path.Combine(fullReset || configurationPrints ? @"C:\Softcom\ResetCaixa\Prints" : @"C:\Softcom\ResetCaixa\ReinstalacaoLimpa",
                     DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss"));
                 Directory.CreateDirectory(runFolder);
                 logFile = Path.Combine(runFolder, "processo.log");
                 File.WriteAllText(logFile, string.Empty, new UTF8Encoding(true));
-                WriteLog("Iniciando download antecipado do PDV: " + selectedPdvVersionName + ".");
-                pdvPackageTask = Task.Run(() =>
+                if (fullReset || cleanReinstall)
                 {
-                    string preparedMsi = PreparePdvPackage(packageCancellation.Token);
-                    if (Volatile.Read(ref captureInProgress) != 0 &&
-                        Interlocked.Exchange(ref packageReadyDuringCaptureLogged, 1) == 0)
-                        WriteLog("Pacote do PDV preparado e aguardando conclusão da captura.");
-                    return preparedMsi;
-                });
-                WriteLog("Download do PDV executando em paralelo.");
+                    WriteLog("Iniciando download antecipado do PDV: " + selectedPdvVersionName + ".");
+                    pdvPackageTask = Task.Run(() =>
+                    {
+                        string preparedMsi = PreparePdvPackage(packageCancellation.Token);
+                        if (Volatile.Read(ref captureInProgress) != 0 &&
+                            Interlocked.Exchange(ref packageReadyDuringCaptureLogged, 1) == 0)
+                            WriteLog("Pacote do PDV preparado e aguardando conclusão da captura.");
+                        return preparedMsi;
+                    });
+                    WriteLog("Download do PDV executando em paralelo.");
+                }
                 WriteLog("Início do processo. Pasta do log: " + runFolder);
-                WriteLog(fullReset
+                WriteLog(configurationPrints
+                    ? "Automação selecionada: Prints de Configuração."
+                    : fullReset
                     ? "Automação selecionada: Reset Completo / Instalação do PDV."
                     : "Automação selecionada: Reinstalação Limpa.");
                 Assembly runningAssembly = Assembly.GetExecutingAssembly();
@@ -1149,21 +1166,19 @@ namespace SoftcomSupportAutomation
                 {
                     WriteLog("Aviso: não foi possível calcular o SHA-256 da central: " + ex.Message);
                 }
-                WriteLog("Versão selecionada para instalação: " + selectedPdvVersionName + ".");
+                if (fullReset || cleanReinstall)
+                    WriteLog("Versão selecionada para instalação: " + selectedPdvVersionName + ".");
                 WriteLog("Privilégio administrativo: " + (IsAdministrator() ? "confirmado" : "não detectado") + ".");
                 WriteLog("Arquitetura detectada: Windows " +
                     (Environment.Is64BitOperatingSystem ? "64 bits" : "32 bits") +
                     ", processo " + (Environment.Is64BitProcess ? "64 bits" : "32 bits") + ".");
                 activeSoftshopProcessId = 0;
-                if (fullReset)
-                {
-                    workflowRunning = true;
-                    cacheBackupDialogClosed = 0;
-                    rpcUnavailableDialogClosed = 0;
-                    var dialogWatcher = new Thread(WatchAndDismissKnownSoftshopDialogs) { IsBackground = true };
-                    dialogWatcher.SetApartmentState(ApartmentState.STA);
-                    dialogWatcher.Start();
-                }
+                workflowRunning = true;
+                cacheBackupDialogClosed = 0;
+                rpcUnavailableDialogClosed = 0;
+                dialogWatcher = new Thread(WatchAndDismissKnownSoftshopDialogs) { IsBackground = true };
+                dialogWatcher.SetApartmentState(ApartmentState.STA);
+                dialogWatcher.Start();
 
                 ThrowIfCancellationRequested();
                 StopSoftshop();
@@ -1173,6 +1188,28 @@ namespace SoftcomSupportAutomation
                     WriteLog("Verificando caminho do Softshop: " + candidate);
                 string[] existingPdvExecutables = softshopCandidates.Where(File.Exists).ToArray();
                 string existingPdvExecutable = existingPdvExecutables.FirstOrDefault();
+                string[] existingPdvDirectories = softshopCandidates.Select(Path.GetDirectoryName)
+                    .Where(Directory.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                if (configurationPrints)
+                {
+                    if (existingPdvExecutable == null)
+                        throw new FileNotFoundException("Softshop Caixa não foi encontrado. Não é possível gerar os prints de configuração.");
+                    WriteLog("Softshop Caixa encontrado em: " + existingPdvExecutable);
+                    WriteLog("Abrindo Softshop para captura de configurações.");
+                    WriteLog("Capturando configurações.");
+                    ThrowIfCancellationRequested();
+                    CaptureConfigurationTabs(existingPdvExecutable);
+                    ThrowIfCancellationRequested();
+                    WriteLog("Encerrando Softshop após a captura.");
+                    StopSoftshop();
+                    ThrowIfCancellationRequested();
+                    WriteLog("Abrindo pasta dos prints.");
+                    OpenPrintFolder();
+                    ThrowIfCancellationRequested();
+                    WriteLog("Prints de Configuração concluídos com sucesso.");
+                    ShowFinal("Prints de Configuração concluídos.\r\nPrints e log: " + runFolder, MessageBoxIcon.Information);
+                    return;
+                }
                 string msiPath;
                 if (fullReset)
                 {
@@ -1224,10 +1261,16 @@ namespace SoftcomSupportAutomation
                 }
                 else
                 {
-                    WriteLog("Modo Reinstalação Limpa: somente desinstalação e instalação; sem capturas, backups ou atualização de DLLs.");
-                    WriteLog("Pastas da instalação e do LocalAppData não serão renomeadas pela Central.");
+                    WriteLog("Modo Reinstalação Limpa: desinstalação, preservação da pasta do caixa e instalação; sem capturas ou atualização de DLLs.");
+                    WriteLog("As pastas do LocalAppData não serão alteradas.");
+                    foreach (string directory in existingPdvDirectories)
+                        WriteLog("Pasta do Softshop Caixa encontrada para preservação: " + directory);
                     ThrowIfCancellationRequested();
                     UninstallAllSoftshopEntries();
+                    ThrowIfCancellationRequested();
+                    StopSoftshop();
+                    ThrowIfCancellationRequested();
+                    BackupFolders(existingPdvDirectories, false);
                     msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
                         "Aguardando preparação do pacote do PDV após a desinstalação.",
                         "Não foi possível preparar o novo pacote do PDV após a desinstalação. Verifique o log e tente novamente.");
@@ -1254,6 +1297,10 @@ namespace SoftcomSupportAutomation
             }
             catch (Exception ex)
             {
+                if (configurationPrints)
+                {
+                    try { StopSoftshop(true); } catch { }
+                }
                 WriteLog("ERRO: " + ex);
                 ShowFinal(ex.Message + "\r\n\r\nO processo foi interrompido. Consulte o log em:\r\n" + runFolder, MessageBoxIcon.Error);
             }
@@ -1267,6 +1314,8 @@ namespace SoftcomSupportAutomation
                     // A próxima execução só pode começar após o download/extração anterior encerrar.
                     try { pdvPackageTask.GetAwaiter().GetResult(); } catch { }
                 }
+                if (dialogWatcher != null && dialogWatcher.IsAlive)
+                    dialogWatcher.Join();
                 packageCancellation.Dispose();
                 FinishAutomation();
             }
@@ -2235,7 +2284,7 @@ namespace SoftcomSupportAutomation
             string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
             string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
             WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.11.0");
+            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.12.0");
             if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
                 throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
             WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
@@ -2400,7 +2449,7 @@ namespace SoftcomSupportAutomation
             try
             {
                 System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.11.0", cancellationToken);
+                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.12.0", cancellationToken);
                 ThrowIfCancellationRequested(cancellationToken);
                 if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
                     throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");
@@ -2828,7 +2877,8 @@ namespace SoftcomSupportAutomation
         private enum PdvAutomationMode
         {
             FullReset,
-            CleanReinstall
+            CleanReinstall,
+            ConfigurationPrints
         }
 
         private sealed class PdvAutomationOption
