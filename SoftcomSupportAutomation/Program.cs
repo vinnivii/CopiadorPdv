@@ -199,7 +199,7 @@ namespace SoftcomSupportAutomation
                 Location = new Point(20, 640),
                 Size = new Size(180, 20),
                 ForeColor = TextMuted,
-                Text = "CENTRAL V2  •  2.12.0"
+                Text = "CENTRAL V2  •  2.12.1"
             };
             var sidebarCredit = new Label
             {
@@ -1339,15 +1339,13 @@ namespace SoftcomSupportAutomation
             if (appWindow == null) throw new InvalidOperationException("A janela de login do Softshop não apareceu em 45 segundos.");
             activeSoftshopProcessId = appWindow.Current.ProcessId;
 
-            WriteLog("Preenchendo senha de suporte.");
-            ActivateWindow(new IntPtr(appWindow.Current.NativeWindowHandle));
-            AutomationElement passwordBox = WaitForPasswordField(appWindow, 8);
-            FillPassword(appWindow, passwordBox);
-            WriteLog("Senha preenchida; abrindo painel de configurações diretamente com F11.");
-            ActivateWindow(new IntPtr(appWindow.Current.NativeWindowHandle));
-            SendKey(Keys.F11);
-            AutomationElement configWindow = WaitForConfigurationWindow(appWindow.Current.ProcessId, 20);
-            if (configWindow == null) throw new InvalidOperationException("O painel de Configurações não apareceu após F11.");
+            AutomationElement configWindow;
+            try { configWindow = OpenConfigurationFromLogin(appWindow, 8, 20); }
+            catch (InvalidOperationException ex)
+            {
+                throw new InvalidOperationException("Não foi possível acessar as Configurações para capturar os dados. " +
+                    "A instalação atual não foi removida. Verifique a tela de login do Softshop e tente novamente. " + ex.Message, ex);
+            }
 
             screenshotNumber = 0;
             CaptureConfiguredRoute(configWindow);
@@ -1366,6 +1364,43 @@ namespace SoftcomSupportAutomation
                 }
                 catch { return false; }
             });
+        }
+
+        private AutomationElement OpenConfigurationFromLogin(AutomationElement loginWindow, int passwordTimeoutSeconds, int configurationTimeoutSeconds)
+        {
+            int processId = loginWindow.Current.ProcessId;
+            for (int attempt = 1; attempt <= 2; attempt++)
+            {
+                ThrowIfCancellationRequested();
+                AutomationElement configuration = FindConfigurationWindow(processId);
+                if (configuration != null) return configuration;
+                // Uma janela modal deve ser resolvida antes de enviar qualquer tecla ao login.
+                if (!loginWindow.Current.IsEnabled || loginWindow.Current.IsOffscreen)
+                    throw new InvalidOperationException("A tela de login está indisponível ou bloqueada por outra janela do Softshop.");
+
+                WriteLog("Preenchendo senha de suporte.");
+                ActivateWindow(new IntPtr(loginWindow.Current.NativeWindowHandle));
+                AutomationElement passwordBox = WaitForPasswordField(loginWindow, passwordTimeoutSeconds);
+                FillPassword(loginWindow, passwordBox, attempt > 1);
+                // Não restaurar/reativar a janela após preencher: F11 precisa do foco no campo Senha.
+                ThrowIfCancellationRequested();
+                configuration = FindConfigurationWindow(processId);
+                if (configuration != null) return configuration;
+                if (passwordBox != null) FocusPasswordField(loginWindow, passwordBox);
+                WriteLog("Senha preenchida e campo em foco; enviando F11 (tentativa " + attempt + "/2).");
+                ThrowIfCancellationRequested();
+                SendKey(Keys.F11);
+                int waitSeconds = attempt == 1 ? Math.Min(5, configurationTimeoutSeconds) : configurationTimeoutSeconds;
+                configuration = WaitForConfigurationWindow(processId, waitSeconds);
+                if (configuration != null)
+                {
+                    WriteLog("Painel de Configurações identificado.");
+                    return configuration;
+                }
+                if (attempt == 1)
+                    WriteLog("Configurações ainda não apareceram; verificando o login antes de repetir F11.");
+            }
+            throw new InvalidOperationException("O painel de Configurações não apareceu após duas tentativas de F11.");
         }
 
         private static bool IsLoginWindow(AutomationElement window)
@@ -1390,18 +1425,26 @@ namespace SoftcomSupportAutomation
 
         private AutomationElement WaitForConfigurationWindow(int softshopProcessId, int timeoutSeconds)
         {
-            return WaitForWindow(timeoutSeconds, element =>
+            return WaitForWindow(timeoutSeconds, element => IsConfigurationWindow(element, softshopProcessId));
+        }
+
+        private static AutomationElement FindConfigurationWindow(int softshopProcessId)
+        {
+            return AutomationElement.RootElement.FindAll(TreeScope.Children, Condition.TrueCondition)
+                .Cast<AutomationElement>().FirstOrDefault(element => IsConfigurationWindow(element, softshopProcessId));
+        }
+
+        private static bool IsConfigurationWindow(AutomationElement element, int softshopProcessId)
+        {
+            try
             {
-                if (element.Current.ProcessId != softshopProcessId) return false;
+                if (element.Current.ProcessId != softshopProcessId || !element.Current.IsEnabled || element.Current.IsOffscreen) return false;
                 string name = element.Current.Name ?? string.Empty;
                 if (name.IndexOf("Configura", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-                try
-                {
-                    return element.FindAll(TreeScope.Descendants,
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem)).Count > 0;
-                }
-                catch { return false; }
-            });
+                return element.FindAll(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem)).Count > 0;
+            }
+            catch { return false; }
         }
 
         private AutomationElement WaitForWindow(int timeoutSeconds, Func<AutomationElement, bool> predicate)
@@ -1611,20 +1654,42 @@ namespace SoftcomSupportAutomation
             return rows.OrderBy(row => row.Min(input => input.Current.BoundingRectangle.Top)).ToList();
         }
 
-        private static void SetText(AutomationElement element, string value)
+        private void FocusPasswordField(AutomationElement loginWindow, AutomationElement passwordBox)
         {
-            object pattern;
-            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out pattern))
+            ThrowIfCancellationRequested();
+            IntPtr loginHandle = new IntPtr(loginWindow.Current.NativeWindowHandle);
+            if (GetForegroundWindow() != loginHandle) ActivateWindow(loginHandle);
+            if (!passwordBox.Current.HasKeyboardFocus) passwordBox.SetFocus();
+            var timeout = Stopwatch.StartNew();
+            while (timeout.ElapsedMilliseconds < 2000)
             {
-                ((ValuePattern)pattern).SetValue(value);
-                return;
+                ThrowIfCancellationRequested();
+                if (GetForegroundWindow() == loginHandle && passwordBox.Current.HasKeyboardFocus) return;
+                SleepWithCancellation(50);
             }
-            element.SetFocus();
-            SendUnicodeText(value);
+            throw new InvalidOperationException("Não foi possível confirmar o foco no campo Senha; nenhuma tecla de atalho foi enviada.");
         }
 
-        private void FillPassword(AutomationElement loginWindow, AutomationElement passwordBox)
+        private void ReplacePasswordUsingKeyboard()
         {
+            ThrowIfCancellationRequested();
+            var selectAll = new[]
+            {
+                INPUT.CreateVirtualKey((ushort)Keys.ControlKey, false),
+                INPUT.CreateVirtualKey((ushort)Keys.A, false),
+                INPUT.CreateVirtualKey((ushort)Keys.A, true),
+                INPUT.CreateVirtualKey((ushort)Keys.ControlKey, true)
+            };
+            if (SendInput((uint)selectAll.Length, selectAll, Marshal.SizeOf(typeof(INPUT))) != selectAll.Length)
+                throw new InvalidOperationException("Não foi possível selecionar o conteúdo anterior do campo Senha.");
+            SendKey(Keys.Back);
+            ThrowIfCancellationRequested();
+            SendUnicodeText(SupportPassword);
+        }
+
+        private void FillPassword(AutomationElement loginWindow, AutomationElement passwordBox, bool useKeyboard)
+        {
+            ThrowIfCancellationRequested();
             if (passwordBox != null)
             {
                 try
@@ -1635,7 +1700,27 @@ namespace SoftcomSupportAutomation
                              ", protegido=" + field.IsPassword + ".");
                 }
                 catch { WriteLog("Campo Senha identificado pela automação."); }
-                SetText(passwordBox, SupportPassword);
+                FocusPasswordField(loginWindow, passwordBox);
+                bool filled = false;
+                object pattern;
+                if (!useKeyboard && passwordBox.TryGetCurrentPattern(ValuePattern.Pattern, out pattern))
+                {
+                    try
+                    {
+                        ((ValuePattern)pattern).SetValue(SupportPassword);
+                        filled = true;
+                    }
+                    catch (InvalidOperationException) { }
+                    catch (NotSupportedException) { }
+                }
+                if (!filled)
+                {
+                    WriteLog("Preenchendo campo Senha por teclado.");
+                    FocusPasswordField(loginWindow, passwordBox);
+                    ReplacePasswordUsingKeyboard();
+                }
+                // SetValue preenche o texto, mas não garante foco nem eventos de teclado.
+                FocusPasswordField(loginWindow, passwordBox);
                 return;
             }
 
@@ -1649,7 +1734,7 @@ namespace SoftcomSupportAutomation
             WriteLog(labelFound
                 ? "Campo Senha não exposto; preenchendo pela linha do rótulo Senha."
                 : "Campo Senha não exposto; usando a posição proporcional da tela de login.");
-            SetForegroundWindow(new IntPtr(loginWindow.Current.NativeWindowHandle));
+            ActivateWindow(new IntPtr(loginWindow.Current.NativeWindowHandle));
             int x = (int)(bounds.Left + bounds.Width * 0.62);
             int y = labelFound
                 ? (int)(passwordLabelBounds.Top + passwordLabelBounds.Height / 2.0)
@@ -1657,7 +1742,10 @@ namespace SoftcomSupportAutomation
             SetCursorPos(x, y);
             mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
             mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
-            SendUnicodeText(SupportPassword);
+            SleepWithCancellation(100);
+            if (GetForegroundWindow() != new IntPtr(loginWindow.Current.NativeWindowHandle))
+                throw new InvalidOperationException("A tela de login perdeu o foco antes do preenchimento da senha.");
+            ReplacePasswordUsingKeyboard();
         }
 
         private static bool TryGetPasswordLabelBounds(AutomationElement root, out System.Windows.Rect bounds)
@@ -2284,7 +2372,7 @@ namespace SoftcomSupportAutomation
             string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
             string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
             WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.12.0");
+            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.12.1");
             if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
                 throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
             WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
@@ -2449,7 +2537,7 @@ namespace SoftcomSupportAutomation
             try
             {
                 System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.12.0", cancellationToken);
+                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.12.1", cancellationToken);
                 ThrowIfCancellationRequested(cancellationToken);
                 if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
                     throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");
@@ -2541,13 +2629,12 @@ namespace SoftcomSupportAutomation
             AutomationElement appWindow = WaitForSoftshopWindow(120);
             if (appWindow == null) throw new InvalidOperationException("A tela de senha da nova instalação não apareceu.");
             activeSoftshopProcessId = appWindow.Current.ProcessId;
-            ActivateWindow(new IntPtr(appWindow.Current.NativeWindowHandle));
-            AutomationElement passwordBox = WaitForPasswordField(appWindow, 30);
-            FillPassword(appWindow, passwordBox);
-            ActivateWindow(new IntPtr(appWindow.Current.NativeWindowHandle));
-            SendKey(Keys.F11);
-            if (WaitForConfigurationWindow(appWindow.Current.ProcessId, 60) == null)
-                throw new InvalidOperationException("O painel de Configurações não abriu na nova instalação.");
+            try { OpenConfigurationFromLogin(appWindow, 30, 60); }
+            catch (InvalidOperationException ex)
+            {
+                throw new InvalidOperationException("A nova versão já foi instalada, mas não foi possível abrir as Configurações. " +
+                    "Abra o Softshop, preencha a senha de suporte e pressione F11 manualmente. " + ex.Message, ex);
+            }
             WriteLog("Nova instalação aberta no painel de Configurações.");
         }
 
@@ -2949,7 +3036,7 @@ namespace SoftcomSupportAutomation
                 INPUT.CreateVirtualKey((ushort)key, true)
             };
             if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT))) != inputs.Length)
-                throw new InvalidOperationException("Não foi possível enviar F11 ao Softshop. Erro do Windows: " + Marshal.GetLastWin32Error());
+                throw new InvalidOperationException("Não foi possível enviar a tecla " + key + " ao Softshop. Erro do Windows: " + Marshal.GetLastWin32Error());
         }
 
         private void ActivateWindow(IntPtr windowHandle)

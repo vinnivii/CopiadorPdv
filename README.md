@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.12.0**
+Versão atual: **2.12.1**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -115,6 +115,10 @@ Desde a versão 2.2.1, o campo é localizado usando, nesta ordem:
 
 O `Edit` interno do `ComboBox` de usuário é descartado antes da análise das linhas. Isso evita que a senha seja escrita no campo Usuário em máquinas com DPI, escala ou tema diferentes e também contempla telas que possuem o terceiro campo **Turno**.
 
+Na versão **2.12.1**, a Central confirma o foco de teclado no campo Senha antes e depois do preenchimento. Alterar o texto por UI Automation não garante esse foco e pode deixar o cursor no início; reativar a janela inteira antes de F11 também foi removido dessa sequência. Quando o campo não aceita o preenchimento direto, a digitação substitui o conteúdo anterior. A mesma correção vale para a captura e para a abertura da nova instalação.
+
+Após F11, a Central aguarda as Configurações e permite uma segunda tentativa se o login continuar visível e habilitado. Nessa tentativa, substitui a senha por digitação para contemplar versões que dependem de eventos de teclado. Antes de repetir, verifica se as Configurações já abriram, evitando enviar F11 novamente a um painel aberto. As esperas respeitam **Parar execução**. Se a captura falhar, a instalação atual permanece sem desinstalação e a mensagem orienta verificar a tela de login.
+
 ## Seleção da versão do PDV
 
 Reset Completo e Reinstalação Limpa possuem um `ComboBox` para escolher a versão que será instalada. Em Prints de Configuração, esse controle fica desabilitado e a versão não é utilizada. A opção **Mais recente disponível (servidor atual)** mantém o endereço tradicional, e as seguintes versões estão disponíveis pelo GitHub Releases, nesta ordem:
@@ -217,9 +221,9 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.12.0**, utilize uma cópia do executável da saída acima com o nome `ResetadorDePdvV2.12.0.exe`.
+Para distribuir a versão **2.12.1**, utilize uma cópia do executável da saída acima com o nome `ResetadorDePdvV2.12.1.exe`.
 
-Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável `ResetadorDePdvV2.12.0.exe`, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
+Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável `ResetadorDePdvV2.12.1.exe`, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
 
 ## Observações de segurança
 
