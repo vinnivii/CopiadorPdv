@@ -109,7 +109,7 @@ namespace SoftcomSupportAutomation
                 // Nunca reutiliza uma saída antiga, mesmo depois de uma falha ou interrupção.
                 if (File.Exists(installerPath)) File.Delete(installerPath);
                 WriteLog("Baixando instalador oficial do HopToDesk.");
-                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, "SoftcomSupportAutomation/2.13.2");
+                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, AutomationUserAgent);
                 ThrowIfCancellationRequested();
                 File.Move(partialPath, installerPath);
 

@@ -538,12 +538,13 @@ Ao cadastrar versão com SHA-256:
 
 Quando uma alteração funcional relevante for implementada:
 
-- atualizar `Version`
-- atualizar `FileVersion`
-- atualizar `AssemblyVersion`
-- atualizar versão exibida na interface
-- atualizar User-Agent quando usado
-- atualizar README
+- atualizar somente `Version` no `.csproj`, usando `MAJOR.MINOR.PATCH`
+- confirmar `FileVersion` e `AssemblyVersion` gerados pelo SDK a partir de `Version`
+- manter versão visual e User-Agent derivados da assembly, sem números repetidos no C#
+- atualizar o README canônico da raiz
+- usar tag `vMAJOR.MINOR.PATCH` para o commit compilado e validado
+
+Usar MAJOR para mudança incompatível, MINOR para funcionalidade compatível e PATCH para correção ou manutenção compatível. Não mover tags já publicadas nem substituir silenciosamente o binário de uma release.
 
 ## 29. Build obrigatório
 
@@ -628,17 +629,16 @@ salvo quando realmente necessário.
 
 ## 32. Arquivos de build no repositório
 
-Evite adicionar novos artefatos de compilação ao controle de versão sem necessidade.
-
-Preferir manter fora do Git:
+Manter fora do Git, conforme a política de limpeza adotada pelo responsável:
 
 ```text
 bin/
 obj/
 *.pdb
+*.log
 ```
 
-Se o projeto deliberadamente mantiver um executável compilado no repositório, não alterar essa política sem solicitação.
+Distribuir `ResetadorDePdvV2.exe` como anexo do GitHub Release correspondente à tag. Os arquivos de build permanecem locais; uma limpeza do índice não deve apagar as cópias da máquina nem reescrever o histórico antigo. Não excluir fixtures ou recursos de código-fonte deliberados apenas por serem binários.
 
 ## 33. Open source
 

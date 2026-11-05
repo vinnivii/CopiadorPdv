@@ -1,0 +1,10 @@
+# Saídas e caches de compilação (permanecem locais).
+**/bin/
+**/obj/
+*.pdb
+*.log
+
+# Estado local do Visual Studio.
+.vs/
+*.user
+*.suo

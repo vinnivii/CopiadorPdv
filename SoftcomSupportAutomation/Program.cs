@@ -38,6 +38,8 @@ namespace SoftcomSupportAutomation
 
     internal sealed partial class SupportForm : Form
     {
+        private static readonly string ApplicationVersion = Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
+        private static readonly string AutomationUserAgent = "SoftcomSupportAutomation/" + ApplicationVersion;
         private const string SoftshopProductName = "Softshop Caixa";
         // A senha foi solicitada pelo suporte para automação. Proteja a distribuição do executável.
         private const string SupportPassword = "suporte@softcom";
@@ -200,7 +202,7 @@ namespace SoftcomSupportAutomation
                 Location = new Point(20, 640),
                 Size = new Size(180, 20),
                 ForeColor = TextMuted,
-                Text = "CENTRAL V2  •  2.13.2"
+                Text = "CENTRAL V2  •  " + ApplicationVersion
             };
             var sidebarCredit = new Label
             {
@@ -2387,7 +2389,7 @@ namespace SoftcomSupportAutomation
             string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
             string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
             WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.13.2");
+            DownloadFileWithCancellation(DllDownloadUrl, rarPath, AutomationUserAgent);
             if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
                 throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
             WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
@@ -2552,7 +2554,7 @@ namespace SoftcomSupportAutomation
             try
             {
                 System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.13.2", cancellationToken);
+                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, AutomationUserAgent, cancellationToken);
                 ThrowIfCancellationRequested(cancellationToken);
                 if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
                     throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");

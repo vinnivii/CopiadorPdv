@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.13.2**
+Versão atual: **2.13.3**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -172,7 +172,9 @@ A Central não tem senha fixa do HopToDesk e não salva a senha digitada em arqu
 
 Foi investigada uma alternativa sem argumento sensível. Na documentação e no código oficial consultados em 05/11/2026 não foi encontrada opção pública `--password-stdin` ou equivalente; o MCP público não oferece configuração da senha local e o IPC interno rejeita outros executáveis. A configuração manual na janela nativa evita o argumento de linha de comando. A automação mantém o comando oficial solicitado, sem tentar contornar o bloqueio do IPC. Referências: [tratamento de `--password`](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/core_main.rs), [proteção do IPC](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/ipc/auth.rs), [armazenamento nativo](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/libs/hbb_common/src/config.rs).
 
-Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC; a instalação real desse pacote ainda depende de homologação.
+Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC.
+
+Em 05/11/2026, o responsável confirmou aprovação dos testes reais de instalação nova, reinstalação, senha, conexão de outro dispositivo e funcionamento após reiniciar. Esse resultado foi informado pelo responsável, não reexecutado pelo agente; as versões e arquiteturas do Windows não foram especificadas.
 
 ## Stack do projeto
 
@@ -251,9 +253,36 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.13.2**, utilize o executável da saída acima; opcionalmente, nomeie a cópia `ResetadorDePdvV2.13.2.exe`.
+Para distribuir a versão **2.13.3**, utilize somente o executável da saída acima, com o nome estável `ResetadorDePdvV2.exe`.
 
 Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do HopToDesk utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
+
+## Versionamento e distribuição
+
+A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAutomation.csproj](SoftcomSupportAutomation/SoftcomSupportAutomation.csproj). O SDK gera `AssemblyVersion` e `FileVersion` automaticamente. A interface e todos os User-Agents leem a versão da assembly, sem números de versão repetidos no C#.
+
+| Item | Padrão |
+| --- | --- |
+| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.3`. |
+| MAJOR | Mudança incompatível que exige orientação de migração. |
+| MINOR | Nova automação ou funcionalidade compatível. |
+| PATCH | Correção ou manutenção compatível, sem nova automação. |
+| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.3.0` neste release. |
+| User-Agent | `SoftcomSupportAutomation/2.13.3`, calculado pela aplicação. |
+| Tag Git | `v2.13.3`, apontando para o commit que foi compilado e validado. |
+| Arquivo para o cliente | `ResetadorDePdvV2.exe`, anexado ao GitHub Release correspondente. |
+
+Para uma nova versão:
+
+1. Altere apenas `<Version>` no projeto e atualize a versão/documentação deste README.
+2. Execute o build Release e confira metadados, abertura e extração ZIP/RAR com uma cópia isolada do EXE. Registre os testes reais aplicáveis e suas pendências.
+3. Revise o diff e faça o commit dos fontes e da documentação.
+4. A partir desse commit, compile e valide novamente o EXE para que a identificação do commit nos metadados corresponda à tag. Não publique uma cópia compilada a partir de outra revisão ou com alterações de código pendentes.
+5. Crie a tag `vMAJOR.MINOR.PATCH` e o GitHub Release com o EXE validado e notas que identifiquem mudanças, testes e pendências. Não mova tags nem substitua silenciosamente um binário já publicado; publique uma nova versão.
+
+`bin/`, `obj/`, PDBs, logs e estado local do Visual Studio ficam fora do Git. A limpeza retirou esses artefatos apenas do índice e preservou os arquivos desta máquina; não reescreveu o histórico antigo. Os executáveis de distribuição devem ser publicados em [GitHub Releases](https://github.com/vinnivii/CopiadorPdv/releases), sem exigir DLLs, configuração ou instalação da própria Central.
+
+Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as próximas melhorias e sua ordem sugerida. A publicação da v2.13.3 ainda deve seguir o procedimento acima; o build local não cria uma release automaticamente.
 
 ## Observações de segurança
 
