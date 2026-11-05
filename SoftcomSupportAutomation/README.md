@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.12.1**
+Versão atual: **2.13.1**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -14,13 +14,14 @@ O botão global **Parar execução** fica disponível enquanto uma automação e
 | Automação | Finalidade |
 | --- | --- |
 | Reset Completo / Instalação do PDV | Inicia o download em paralelo à captura. Só desinstala e renomeia a instalação e o LocalAppData após o novo pacote estar validado e o MSI extraído. Sem PDV existente, segue em instalação nova. |
-| Reinstalação Limpa | Inicia o download em paralelo, desinstala, preserva somente as pastas da instalação por renomeação e instala a versão selecionada. Sem capturas, alterações no LocalAppData, atualização de DLLs ou abertura automática do PDV. |
+| Reinstalação Limpa | Inicia o download em paralelo, desinstala, preserva somente as pastas da instalação por renomeação, atualiza DLLs se selecionado e instala a versão escolhida. Sem capturas, alterações no LocalAppData ou abertura automática do PDV. |
 | Prints de Configuração | Abre o caixa instalado, acessa as Configurações via F11, captura as abas suportadas e as credenciais já previstas, fecha o caixa e abre a pasta dos prints. Sem download, desinstalação ou instalação. |
-| Atualização do SetupSoftcomDLLs | Opção exclusiva do Reset Completo que remove versões anteriores e instala o pacote mais recente antes da instalação do caixa. |
+| Atualização do SetupSoftcomDLLs | Opção do Reset Completo e da Reinstalação Limpa que remove versões anteriores e instala o pacote mais recente antes da instalação do caixa. Desabilitada em Prints de Configuração. |
 | Atualização do SoftcomBackup | Extrai e executa o script PowerShell oficial incorporado ao EXE. |
 | Ajuste Update RDP | Executa o ajuste de confirmação de dados do cliente RDP no Windows 11. |
 | Reinicialização do Softconnect | Finaliza o processo atual e abre o Softconnect novamente. |
 | Limpeza da fila de impressão | Reinicia o serviço Spooler e remove documentos travados na fila. |
+| HopToDesk | Baixa o instalador oficial, valida a assinatura, instala silenciosamente e abre o aplicativo para consulta do ID. |
 
 Os scripts PowerShell e Batch são incorporados ao executável sem alterações. Durante a execução, eles são extraídos para `C:\Softcom\ResetCaixa\Scripts` e abertos em uma janela administrativa visível, preservando as mensagens e pausas dos arquivos originais.
 
@@ -53,12 +54,13 @@ Quando `Softshop.exe` não existe nos caminhos verificados, o Reset entra em **i
 2. Encerra os processos `Softshop.exe` e registra as pastas da instalação existentes nos caminhos de 32 e 64 bits.
 3. Desinstala todas as entradas registradas de **Softshop Caixa** enquanto o pacote é preparado. O aviso conhecido de backup do cache recebe **OK** automaticamente.
 4. Encerra processos restantes e preserva somente as pastas da instalação por renomeação, usando os sufixos `_`, `_1`, `_2` etc., sem sobrescrever backups. Mantém as novas tentativas por até 30 segundos em caso de bloqueio temporário.
-5. Aguarda a preparação do pacote, incluindo validação do arquivo, SHA-256 quando cadastrado e extração do MSI.
-6. Instala a versão selecionada e informa a conclusão.
+5. Se **Atualizar SetupSoftcomDLLs antes de instalar** estiver marcado, executa a mesma rotina de DLLs do Reset Completo enquanto o pacote do PDV continua sendo preparado. Os temporários de DLLs e PDV ficam em pastas separadas.
+6. Aguarda a preparação do pacote, incluindo validação do arquivo, SHA-256 quando cadastrado e extração do MSI.
+7. Instala a versão selecionada e informa a conclusão.
 
-A Central não abre o PDV antigo ou o novo, não preenche senha, não envia `F11`, não tira prints e não salva credenciais. As duas pastas do LocalAppData permanecem intactas. Não atualiza `SetupSoftcomDLLs` e não abre pasta de prints.
+A Central não abre o PDV antigo ou o novo, não preenche senha, não envia `F11`, não tira prints e não salva credenciais. As duas pastas do LocalAppData permanecem intactas. Não abre pasta de prints. Com o checkbox desmarcado, não atualiza `SetupSoftcomDLLs`.
 
-O checkbox de DLLs fica desabilitado nesse modo, mantendo sua seleção para quando o técnico voltar ao Reset Completo. O log da Reinstalação Limpa fica separado dos prints.
+O checkbox de DLLs fica habilitado tanto na Reinstalação Limpa quanto no Reset Completo; em Prints de Configuração continua desabilitado. O log da Reinstalação Limpa fica separado dos prints.
 
 É intencional que a desinstalação e a preservação da pasta aconteçam antes de o pacote ficar pronto. Se a preparação falhar após essa etapa, o técnico é informado e nenhum arquivo inválido é instalado.
 
@@ -147,6 +149,31 @@ Cada botão **Baixar** apenas abre a URL cadastrada no navegador padrão do Wind
 
 Os nomes e links são compilados no próprio EXE, sem arquivo externo de configuração. Não há consultas de rede ou verificação de disponibilidade na abertura da aplicação; o endereço só é aberto quando o técnico clica.
 
+## HopToDesk nos Utilitários
+
+Os utilitários existentes ficam à esquerda e o card do **HopToDesk** à direita, mantendo a janela em 1040 × 700. O card oferece **Configurar senha permanente**, marcado por padrão, o campo **Senha permanente de acesso**, inicialmente vazio e oculto (`UseSystemPasswordChar = true`), e o botão **Mostrar/Ocultar**.
+
+Antes de iniciar, preencha a senha ou desmarque o checkbox. O campo é limpo e volta a ficar oculto assim que a execução começa. A senha dessa execução não é reutilizada nas próximas; uma nova senha deve ser digitada a cada atendimento. Desmarcar a opção também limpa o campo.
+
+1. Detecta o serviço, os registros de instalação nas visões de 32/64 bits e os executáveis em `Program Files` e `Program Files (x86)`. Se já houver instalação, pergunta se deseja reinstalar/atualizar; a opção padrão é **Não**. A mensagem avisa quando a senha será substituída pela informada.
+2. Baixa sob demanda `https://dl.hoptodesk.com/HopToDesk.exe` para `C:\Softcom\ResetCaixa\HopToDesk\HopToDesk.exe.partial`. Nenhuma consulta é feita na inicialização da Central.
+3. Verifica tamanho, cabeçalhos de executável Windows e assinatura Authenticode confiável de **Begonia Holdings LLC** com `WinVerifyTrust`, usando os certificados locais e o cache do Windows, sem consulta online de revogação. Downloads parciais ou inválidos são descartados.
+4. Executa `HopToDesk.exe --silent-install` diretamente em C#, com timeout de cinco minutos e cancelamento, e confirma o executável instalado e o serviço em execução.
+5. Se selecionado, executa o aplicativo instalado com o argumento oficial `--password`, passando a senha apenas em memória. Não usa shell intermediário. Aspas, espaços, barras, Unicode e metacaracteres são tratados como parte de um único argumento literal. O limite de 128 bytes UTF-8 segue o armazenamento nativo observado no código do HopToDesk.
+6. Exige o marcador de sucesso do comando e verifica, somente por leitura, a presença da senha permanente nas configurações nativas do usuário e do serviço. Não descriptografa, exporta ou regrava o valor. O código de saída zero sozinho não comprova sucesso.
+7. Confere as opções nativas de acesso não supervisionado, método de senha, aprovação de conexão, conexões de entrada, SSO e acesso por conta. Se o acesso não for confirmado, informa a pendência e orienta ativá-lo/conferi-lo no aplicativo. Não altera políticas de segurança existentes nem declara o acesso pronto nessa situação.
+8. Abre o aplicativo instalado para o técnico conferir o ID e testar uma conexão de outro dispositivo. A verificação local não substitui esse teste real de conexão.
+
+Com **Configurar senha permanente** desmarcado, instala e abre normalmente, sem executar `--password` nem alterar senhas/opções de acesso. Os comandos de instalação e senha estão na [ajuda oficial do HopToDesk](https://help.hoptodesk.com/help).
+
+A Central não tem senha fixa do HopToDesk e não salva a senha digitada em arquivos, configurações, logs ou mensagens de erro. Descarta stdout/stderr do comando e zera o buffer temporário ao concluir, falhar, cancelar ou recusar a reinstalação. O próprio HopToDesk mantém sua configuração nativa de senha criptografada, necessária para que ela seja permanente; a Central apenas verifica sua presença. **Parar execução** interrompe o processo iniciado, impede próximas etapas e descarta a senha dessa execução, mas não desfaz uma senha que o aplicativo já tenha aplicado.
+
+**Exposição pela linha de comando:** `--password` exige a senha como argumento. Durante a execução, usuários/processos com permissão de inspeção podem vê-la nos detalhes do processo; ferramentas de auditoria do Windows ou de terceiros também podem registrar a linha de comando. Ocultar a janela e o campo não elimina essa exposição. A Central não exibe nem registra os argumentos.
+
+Foi investigada uma alternativa sem argumento sensível. Na documentação e no código oficial consultados em 05/11/2026 não foi encontrada opção pública `--password-stdin` ou equivalente; o MCP público não oferece configuração da senha local e o IPC interno rejeita outros executáveis. A configuração manual na janela nativa evita o argumento de linha de comando. A automação mantém o comando oficial solicitado, sem tentar contornar o bloqueio do IPC. Referências: [tratamento de `--password`](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/core_main.rs), [proteção do IPC](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/ipc/auth.rs), [armazenamento nativo](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/libs/hbb_common/src/config.rs).
+
+Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. Não há cadastro ou dependência do Dashboard. Para o futuro **Softcom Remoto**, substitua `HopToDeskDownloadUrl` em `HopToDesk.cs` e confira as constantes de editor/serviço e os caminhos nativos antes de homologar o instalador personalizado.
+
 ## Stack do projeto
 
 | Camada | Tecnologia |
@@ -174,6 +201,8 @@ Os nomes e links são compilados no próprio EXE, sem arquivo externo de configu
 ```text
 SoftcomSupportAutomation/
 ├── Program.cs                         # Interface e fluxos de automação
+├── HopToDesk.cs                       # Instalação, detecção e assinatura do HopToDesk
+├── HopToDeskPassword.cs               # Campo de senha, execução protegida e verificação local
 ├── SoftcomSupportAutomation.csproj    # Configuração, versão e dependências
 ├── app.manifest                       # Execução obrigatória como administrador
 ├── Scripts/
@@ -194,6 +223,7 @@ SoftcomSupportAutomation/
 | `C:\Softcom\ResetCaixa\DLLs` | RAR e MSI do SetupSoftcomDLLs. |
 | `C:\Softcom\ResetCaixa\SoftcomBackup\<data-hora>` | Log da atualização do SoftcomBackup. |
 | `C:\Softcom\ResetCaixa\Utilitarios` | Logs dos utilitários rápidos. |
+| `C:\Softcom\ResetCaixa\HopToDesk` | Instalador baixado sob demanda e subpastas com logs do HopToDesk. |
 | `C:\Softcom\ResetCaixa\Scripts` | Scripts extraídos do executável durante o uso. |
 
 ## Requisitos do computador cliente
@@ -221,9 +251,9 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.12.1**, utilize uma cópia do executável da saída acima com o nome `ResetadorDePdvV2.12.1.exe`.
+Para distribuir a versão **2.13.1**, utilize o executável da saída acima; opcionalmente, nomeie a cópia `ResetadorDePdvV2.13.1.exe`.
 
-Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável `ResetadorDePdvV2.12.1.exe`, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows.
+Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do HopToDesk utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
 
 ## Observações de segurança
 

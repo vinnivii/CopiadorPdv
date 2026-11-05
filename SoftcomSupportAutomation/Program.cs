@@ -36,7 +36,7 @@ namespace SoftcomSupportAutomation
         }
     }
 
-    internal sealed class SupportForm : Form
+    internal sealed partial class SupportForm : Form
     {
         private const string SoftshopProductName = "Softshop Caixa";
         // A senha foi solicitada pelo suporte para automação. Proteja a distribuição do executável.
@@ -69,6 +69,7 @@ namespace SoftcomSupportAutomation
         private readonly Button rdpButton = new Button();
         private readonly Button softconnectButton = new Button();
         private readonly Button printQueueButton = new Button();
+        private readonly Button hopToDeskButton = new Button();
         private readonly Button softshopNavigationButton = new Button();
         private readonly Button backupNavigationButton = new Button();
         private readonly Button utilitiesNavigationButton = new Button();
@@ -199,7 +200,7 @@ namespace SoftcomSupportAutomation
                 Location = new Point(20, 640),
                 Size = new Size(180, 20),
                 ForeColor = TextMuted,
-                Text = "CENTRAL V2  •  2.12.1"
+                Text = "CENTRAL V2  •  2.13.1"
             };
             var sidebarCredit = new Label
             {
@@ -481,14 +482,17 @@ namespace SoftcomSupportAutomation
                 softconnectButton,
                 "Reiniciar Softconnect",
                 Color.FromArgb(55, 55, 55));
-            softconnectCard.Location = new Point(271, 82);
+            softconnectCard.Location = new Point(22, 162);
             Panel printQueueCard = CreateUtilityCard(
                 "Fila de impressão",
                 "Reinicia o Spooler e remove documentos travados na fila.",
                 printQueueButton,
                 "Limpar fila",
                 Color.FromArgb(55, 55, 55));
-            printQueueCard.Location = new Point(520, 82);
+            printQueueCard.Location = new Point(22, 242);
+            Panel hopToDeskCard = CreateHopToDeskCard();
+            hopToDeskCard.Location = new Point(392, 82);
+            hopToDeskButton.Click += HopToDeskButton_Click;
             rdpButton.Click += (sender, args) => StartEmbeddedBatchScript(
                 RdpScriptResource, "AJUSTE_UPDATE_RDP.bat", "Ajuste Update RDP", "Ajuste_Update_RDP");
             softconnectButton.Click += (sender, args) => StartEmbeddedBatchScript(
@@ -500,6 +504,7 @@ namespace SoftcomSupportAutomation
             utilitiesGroup.Controls.Add(rdpCard);
             utilitiesGroup.Controls.Add(softconnectCard);
             utilitiesGroup.Controls.Add(printQueueCard);
+            utilitiesGroup.Controls.Add(hopToDeskCard);
 
             var downloadsGroup = new Panel
             {
@@ -765,15 +770,15 @@ namespace SoftcomSupportAutomation
         {
             var card = new Panel
             {
-                Size = new Size(224, 198),
+                Size = new Size(352, 72),
                 BackColor = DarkCard
             };
             ApplyPanelBorder(card);
             var titleLabel = new Label
             {
                 AutoSize = false,
-                Location = new Point(14, 12),
-                Size = new Size(196, 22),
+                Location = new Point(12, 8),
+                Size = new Size(224, 20),
                 ForeColor = TextPrimary,
                 Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9, FontStyle.Bold),
                 Text = title
@@ -781,14 +786,14 @@ namespace SoftcomSupportAutomation
             var descriptionLabel = new Label
             {
                 AutoSize = false,
-                Location = new Point(14, 38),
-                Size = new Size(196, 72),
+                Location = new Point(12, 28),
+                Size = new Size(224, 38),
                 ForeColor = TextSecondary,
                 Text = description
             };
             button.Text = buttonText;
-            button.Location = new Point(14, 148);
-            button.Size = new Size(196, 34);
+            button.Location = new Point(242, 12);
+            button.Size = new Size(98, 48);
             StyleActionButton(button, buttonColor);
             card.Controls.Add(titleLabel);
             card.Controls.Add(descriptionLabel);
@@ -858,7 +863,8 @@ namespace SoftcomSupportAutomation
             }
 
             selectedPdvAutomationMode = selectedAutomation.Mode;
-            updateDllsRequested = selectedPdvAutomationMode == PdvAutomationMode.FullReset && updateDllsCheckBox.Checked;
+            updateDllsRequested = (selectedPdvAutomationMode == PdvAutomationMode.FullReset ||
+                selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall) && updateDllsCheckBox.Checked;
             PrepareAutomationStart();
             var worker = new Thread(RunWorkflow) { IsBackground = true };
             worker.SetApartmentState(ApartmentState.STA);
@@ -1081,6 +1087,8 @@ namespace SoftcomSupportAutomation
                     rdpButton.Enabled = enabled;
                     softconnectButton.Enabled = enabled;
                     printQueueButton.Enabled = enabled;
+                    hopToDeskButton.Enabled = enabled;
+                    SetHopToDeskPasswordControlsEnabled(enabled);
                     softshopNavigationButton.Enabled = enabled;
                     backupNavigationButton.Enabled = enabled;
                     utilitiesNavigationButton.Enabled = enabled;
@@ -1097,6 +1105,8 @@ namespace SoftcomSupportAutomation
             rdpButton.Enabled = enabled;
             softconnectButton.Enabled = enabled;
             printQueueButton.Enabled = enabled;
+            hopToDeskButton.Enabled = enabled;
+            SetHopToDeskPasswordControlsEnabled(enabled);
             softshopNavigationButton.Enabled = enabled;
             backupNavigationButton.Enabled = enabled;
             utilitiesNavigationButton.Enabled = enabled;
@@ -1110,7 +1120,9 @@ namespace SoftcomSupportAutomation
         private void UpdatePdvDllOption(bool actionsEnabled)
         {
             var option = pdvAutomationComboBox.SelectedItem as PdvAutomationOption;
-            updateDllsCheckBox.Enabled = actionsEnabled && option != null && option.Mode == PdvAutomationMode.FullReset;
+            bool supportsDllUpdate = option != null &&
+                (option.Mode == PdvAutomationMode.FullReset || option.Mode == PdvAutomationMode.CleanReinstall);
+            updateDllsCheckBox.Enabled = actionsEnabled && supportsDllUpdate;
             pdvVersionComboBox.Enabled = actionsEnabled && option != null && option.Mode != PdvAutomationMode.ConfigurationPrints;
         }
 
@@ -1261,7 +1273,7 @@ namespace SoftcomSupportAutomation
                 }
                 else
                 {
-                    WriteLog("Modo Reinstalação Limpa: desinstalação, preservação da pasta do caixa e instalação; sem capturas ou atualização de DLLs.");
+                    WriteLog("Modo Reinstalação Limpa: desinstalação, preservação da pasta do caixa e instalação; sem capturas.");
                     WriteLog("As pastas do LocalAppData não serão alteradas.");
                     foreach (string directory in existingPdvDirectories)
                         WriteLog("Pasta do Softshop Caixa encontrada para preservação: " + directory);
@@ -1271,6 +1283,9 @@ namespace SoftcomSupportAutomation
                     StopSoftshop();
                     ThrowIfCancellationRequested();
                     BackupFolders(existingPdvDirectories, false);
+                    ThrowIfCancellationRequested();
+                    if (updateDllsRequested) UpdateSoftcomDlls();
+                    else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
                     msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
                         "Aguardando preparação do pacote do PDV após a desinstalação.",
                         "Não foi possível preparar o novo pacote do PDV após a desinstalação. Verifique o log e tente novamente.");
@@ -2372,7 +2387,7 @@ namespace SoftcomSupportAutomation
             string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
             string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
             WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.12.1");
+            DownloadFileWithCancellation(DllDownloadUrl, rarPath, "SoftcomSupportAutomation/2.13.1");
             if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
                 throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
             WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
@@ -2537,7 +2552,7 @@ namespace SoftcomSupportAutomation
             try
             {
                 System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
-                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.12.1", cancellationToken);
+                DownloadFileWithCancellation(selectedPdvDownloadUrl, archivePath, "SoftcomSupportAutomation/2.13.1", cancellationToken);
                 ThrowIfCancellationRequested(cancellationToken);
                 if (!File.Exists(archivePath) || new FileInfo(archivePath).Length == 0)
                     throw new InvalidOperationException("O download do pacote retornou um arquivo vazio.");
