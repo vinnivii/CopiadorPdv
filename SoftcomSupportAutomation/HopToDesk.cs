@@ -60,7 +60,6 @@ namespace SoftcomSupportAutomation
         {
             string installerPath = null;
             string partialPath = null;
-            bool installerValidated = false;
             bool installationStarted = false;
             bool installationConfirmed = false;
             bool existingInstallation = false;
@@ -109,7 +108,7 @@ namespace SoftcomSupportAutomation
                 // Nunca reutiliza uma saída antiga, mesmo depois de uma falha ou interrupção.
                 if (File.Exists(installerPath)) File.Delete(installerPath);
                 WriteLog("Baixando instalador oficial do HopToDesk.");
-                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, "SoftcomSupportAutomation/2.13.2");
+                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, AutomationUserAgent);
                 ThrowIfCancellationRequested();
                 File.Move(partialPath, installerPath);
 
@@ -118,7 +117,6 @@ namespace SoftcomSupportAutomation
                 using (var installerLock = new FileStream(installerPath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
                     ValidateHopToDeskInstaller(installerPath);
-                    installerValidated = true;
                     WriteLog("Instalador validado. Assinatura digital confiável de " + HopToDeskPublisher + ".");
                     ThrowIfCancellationRequested();
                     stage = "instalação silenciosa";
@@ -190,7 +188,7 @@ namespace SoftcomSupportAutomation
                 if (password != null) Array.Clear(password, 0, password.Length);
                 BeginInvoke((Action)ClearHopToDeskPasswordControls);
                 DeleteHopToDeskDownload(partialPath);
-                if (!installerValidated) DeleteHopToDeskDownload(installerPath);
+                DeleteHopToDeskDownload(installerPath);
                 FinishAutomation();
             }
         }

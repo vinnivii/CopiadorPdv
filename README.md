@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.13.2**
+Versão atual: **2.13.3**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -83,6 +83,14 @@ Os três modos compartilham o watcher de avisos conhecidos. Ele reconhece a mens
 **Parar execução** e o fechamento da janela cancelam o workflow e a preparação do pacote. Arquivos parciais de download ou extração são removidos, e a instalação seguinte não começa. Se outra etapa do workflow falhar, a preparação em andamento também é cancelada. A Central aguarda a tarefa de preparação encerrar antes de liberar outra execução ou fechar, evitando tarefas órfãs e dois downloads no mesmo arquivo.
 
 Antes de cada preparação, apenas as saídas antigas `PDV_SoftshopCaixa_Selecionado.zip`, `PDV_SoftshopCaixa_Selecionado.rar` e `SetupSoftshopFrenteLoja.msi` são removidas da pasta `C:\Softcom\ResetCaixa\Download`.
+
+### Downloads em conexão instável e duração das etapas
+
+Os downloads de PDV, DLLs e HopToDesk usam o mesmo helper, com até três tentativas totais. Há nova tentativa somente para falhas de conexão/timeout e HTTP 408, 429, 500, 502, 503 e 504. Os intervalos padrão são de um e dois segundos, sempre canceláveis. Um `Retry-After` válido de até 30 segundos é respeitado; se o servidor pedir mais tempo, a rotina informa o erro sem antecipar outra tentativa. Cada espera por resposta/leitura tem limite de 60 segundos sem progresso, sem impor um tempo total curto ao arquivo que continua chegando.
+
+Arquivos parciais são descartados antes da próxima tentativa. Erros de disco, TLS/confiança, 401/403 e outros erros definitivos não são repetidos. SHA-256, assinatura e conteúdo são validados depois do download; reprovar uma dessas verificações não inicia um novo download. **Parar execução** cancela a transferência ou o intervalo e aguarda a operação de rede terminar antes de liberar outra execução.
+
+O log registra a duração da preparação do pacote, captura, encerramento do Softshop, desinstalação, preservação de pastas, DLLs, instalação e atendimento total, inclusive em falha/cancelamento. A preparação continua paralela: sua duração não deve ser somada à captura para calcular o tempo total. Uma falha ao gravar somente a medição não substitui o resultado original da operação.
 
 ### Caminho do PDV por arquitetura
 
@@ -172,7 +180,11 @@ A Central não tem senha fixa do HopToDesk e não salva a senha digitada em arqu
 
 Foi investigada uma alternativa sem argumento sensível. Na documentação e no código oficial consultados em 05/11/2026 não foi encontrada opção pública `--password-stdin` ou equivalente; o MCP público não oferece configuração da senha local e o IPC interno rejeita outros executáveis. A configuração manual na janela nativa evita o argumento de linha de comando. A automação mantém o comando oficial solicitado, sem tentar contornar o bloqueio do IPC. Referências: [tratamento de `--password`](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/core_main.rs), [proteção do IPC](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/ipc/auth.rs), [armazenamento nativo](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/libs/hbb_common/src/config.rs).
 
-Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC; a instalação real desse pacote ainda depende de homologação.
+Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC.
+
+Ao finalizar, falhar ou cancelar, a Central tenta remover apenas `HopToDesk.exe` e seu `.partial` da pasta de download, depois de liberar o lock e encerrar o processo iniciado. Arquivo bloqueado ou sem permissão de exclusão gera aviso no log; a limpeza não remove o aplicativo instalado nem seus arquivos de configuração.
+
+Em 05/11/2026, o responsável confirmou aprovação dos testes reais de instalação nova, reinstalação, senha, conexão de outro dispositivo e funcionamento após reiniciar. Esse resultado foi informado pelo responsável, não reexecutado pelo agente; as versões e arquiteturas do Windows não foram especificadas.
 
 ## Stack do projeto
 
@@ -189,7 +201,7 @@ Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O i
 | Referências do framework | Microsoft.NETFramework.ReferenceAssemblies 1.0.3, somente durante o build |
 | Registro do Windows | `Microsoft.Win32`, consultando as visões de 32 e 64 bits |
 | Instalação e desinstalação | Windows Installer por `msiexec.exe` |
-| Downloads das automações | `System.Net.WebClient`, com cancelamento e limpeza de arquivos parciais |
+| Downloads das automações | `System.Net.HttpWebRequest`, com cancelamento, timeout de inatividade e retry seletivo |
 | Atalhos da Central Downloads | `Process.Start` com `UseShellExecute=true`, abrindo o navegador padrão |
 | Scripts administrativos | Windows PowerShell 5.1 e Batch/`cmd.exe`, incorporados como recursos |
 | Build | .NET SDK, MSBuild e NuGet |
@@ -203,6 +215,7 @@ SoftcomSupportAutomation/
 ├── Program.cs                         # Interface e fluxos de automação
 ├── HopToDesk.cs                       # Instalação, detecção e assinatura do HopToDesk
 ├── HopToDeskPassword.cs               # Campo de senha, execução protegida e verificação local
+├── DownloadHelpers.cs                # Download compartilhado, retry e timeout canceláveis
 ├── SoftcomSupportAutomation.csproj    # Configuração, versão e dependências
 ├── app.manifest                       # Execução obrigatória como administrador
 ├── Scripts/
@@ -251,9 +264,45 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.13.2**, utilize o executável da saída acima; opcionalmente, nomeie a cópia `ResetadorDePdvV2.13.2.exe`.
+Para distribuir a versão **2.13.3**, utilize somente o executável da saída acima, com o nome estável `ResetadorDePdvV2.exe`.
 
 Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do HopToDesk utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
+
+## Versionamento e distribuição
+
+A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAutomation.csproj](SoftcomSupportAutomation/SoftcomSupportAutomation.csproj). O SDK gera `AssemblyVersion` e `FileVersion` automaticamente. A interface e todos os User-Agents leem a versão da assembly, sem números de versão repetidos no C#.
+
+| Item | Padrão |
+| --- | --- |
+| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.3`. |
+| MAJOR | Mudança incompatível que exige orientação de migração. |
+| MINOR | Nova automação ou funcionalidade compatível. |
+| PATCH | Correção ou manutenção compatível, sem nova automação. |
+| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.3.0` neste release. |
+| User-Agent | `SoftcomSupportAutomation/2.13.3`, calculado pela aplicação. |
+| Tag Git | `v2.13.3`, apontando para o commit que foi compilado e validado. |
+| Arquivo para o cliente | `ResetadorDePdvV2.exe`, anexado ao GitHub Release correspondente. |
+
+Para uma nova versão:
+
+1. Altere apenas `<Version>` no projeto e atualize a versão/documentação deste README.
+2. Execute o build Release e confira metadados, abertura e extração ZIP/RAR com uma cópia isolada do EXE. Registre os testes reais aplicáveis e suas pendências.
+3. Revise o diff e faça o commit dos fontes e da documentação.
+4. Integre o PR e crie a tag `vMAJOR.MINOR.PATCH` no commit escolhido. Não publique uma cópia compilada a partir de outra revisão ou com alterações de código pendentes.
+5. Envie a tag ao GitHub. O workflow [verify-release.yml](.github/workflows/verify-release.yml) confere a tag contra `<Version>`, compila e executa os testes em Windows. Só depois publica o EXE testado no Release. O job de PR tem acesso de leitura; apenas o job de publicação por tag pode criar uma release. Tags/releases existentes não são substituídas automaticamente.
+
+Os mesmos testes podem ser executados localmente, sem instalar ou alterar serviços:
+
+```powershell
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Verify-Portable.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Verify-Workflow.ps1
+```
+
+O primeiro testa o EXE sozinho, recursos, ZIP/RAR, download/retry, cancelamento, limpeza e medições. O segundo executa as decisões do fluxo real com operações externas simuladas. Nenhum deles comprova instalação, F11/prints ou conexão remota reais. A fixture RAR de 127 bytes tem origem e licença registradas em [tests/fixtures](tests/fixtures/README.md).
+
+`bin/`, `obj/`, PDBs, logs e estado local do Visual Studio ficam fora do Git. A limpeza retirou esses artefatos apenas do índice e preservou os arquivos desta máquina; não reescreveu o histórico antigo. Os executáveis de distribuição devem ser publicados em [GitHub Releases](https://github.com/vinnivii/CopiadorPdv/releases), sem exigir DLLs, configuração ou instalação da própria Central.
+
+Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.3](docs/VALIDACAO-v2.13.3.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
 
 ## Observações de segurança
 
