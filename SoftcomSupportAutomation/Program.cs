@@ -1128,8 +1128,36 @@ namespace SoftcomSupportAutomation
             pdvVersionComboBox.Enabled = actionsEnabled && option != null && option.Mode != PdvAutomationMode.ConfigurationPrints;
         }
 
+        private T RunTimedPhase<T>(string phase, Func<T> action)
+        {
+            var elapsed = Stopwatch.StartNew();
+            string outcome = "concluída";
+            try { return action(); }
+            catch (OperationCanceledException) { outcome = "cancelada"; throw; }
+            catch { outcome = "falhou"; throw; }
+            finally { WritePhaseDuration(phase, elapsed.Elapsed, outcome); }
+        }
+
+        private void RunTimedPhase(string phase, Action action)
+        {
+            RunTimedPhase(phase, () => { action(); return true; });
+        }
+
+        private void WritePhaseDuration(string phase, TimeSpan elapsed, string outcome)
+        {
+            try
+            {
+                WriteLog("Tempo da etapa '" + phase + "': " + elapsed.TotalSeconds.ToString("0.0", CultureInfo.CurrentCulture) +
+                    " s (" + outcome + ").");
+            }
+            catch (IOException) { } // A medição não pode substituir o resultado da operação.
+            catch (UnauthorizedAccessException) { }
+        }
+
         private void RunWorkflow()
         {
+            var workflowElapsed = Stopwatch.StartNew();
+            string workflowOutcome = "interrompido";
             Task<string> pdvPackageTask = null;
             bool fullReset = selectedPdvAutomationMode == PdvAutomationMode.FullReset;
             bool cleanReinstall = selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall;
@@ -1150,7 +1178,7 @@ namespace SoftcomSupportAutomation
                     WriteLog("Iniciando download antecipado do PDV: " + selectedPdvVersionName + ".");
                     pdvPackageTask = Task.Run(() =>
                     {
-                        string preparedMsi = PreparePdvPackage(packageCancellation.Token);
+                        string preparedMsi = RunTimedPhase("Preparação do pacote do PDV", () => PreparePdvPackage(packageCancellation.Token));
                         if (Volatile.Read(ref captureInProgress) != 0 &&
                             Interlocked.Exchange(ref packageReadyDuringCaptureLogged, 1) == 0)
                             WriteLog("Pacote do PDV preparado e aguardando conclusão da captura.");
@@ -1195,7 +1223,7 @@ namespace SoftcomSupportAutomation
                 dialogWatcher.Start();
 
                 ThrowIfCancellationRequested();
-                StopSoftshop();
+                RunTimedPhase("Encerramento do Softshop", () => StopSoftshop());
                 ThrowIfCancellationRequested();
                 string[] softshopCandidates = GetSoftshopExecutableCandidates();
                 foreach (string candidate in softshopCandidates)
@@ -1212,15 +1240,16 @@ namespace SoftcomSupportAutomation
                     WriteLog("Abrindo Softshop para captura de configurações.");
                     WriteLog("Capturando configurações.");
                     ThrowIfCancellationRequested();
-                    CaptureConfigurationTabs(existingPdvExecutable);
+                    RunTimedPhase("Captura de configurações", () => CaptureConfigurationTabs(existingPdvExecutable));
                     ThrowIfCancellationRequested();
                     WriteLog("Encerrando Softshop após a captura.");
-                    StopSoftshop();
+                    RunTimedPhase("Encerramento do Softshop", () => StopSoftshop());
                     ThrowIfCancellationRequested();
                     WriteLog("Abrindo pasta dos prints.");
                     OpenPrintFolder();
                     ThrowIfCancellationRequested();
                     WriteLog("Prints de Configuração concluídos com sucesso.");
+                    workflowOutcome = "concluído";
                     ShowFinal("Prints de Configuração concluídos.\r\nPrints e log: " + runFolder, MessageBoxIcon.Information);
                     return;
                 }
@@ -1242,11 +1271,11 @@ namespace SoftcomSupportAutomation
                             if (pdvPackageTask.Status == TaskStatus.RanToCompletion &&
                                 Interlocked.Exchange(ref packageReadyDuringCaptureLogged, 1) == 0)
                                 WriteLog("Pacote do PDV preparado e aguardando conclusão da captura.");
-                            CaptureConfigurationTabs(existingPdvExecutable);
+                            RunTimedPhase("Captura de configurações", () => CaptureConfigurationTabs(existingPdvExecutable));
                         }
                         finally { Volatile.Write(ref captureInProgress, 0); }
                         ThrowIfCancellationRequested();
-                        StopSoftshop();
+                        RunTimedPhase("Encerramento do Softshop", () => StopSoftshop());
                     }
                     else
                     {
@@ -1263,14 +1292,14 @@ namespace SoftcomSupportAutomation
                     if (existingPdvExecutable != null)
                     {
                         ThrowIfCancellationRequested();
-                        UninstallAllSoftshopEntries();
+                        RunTimedPhase("Desinstalação do PDV", UninstallAllSoftshopEntries);
                         ThrowIfCancellationRequested();
-                        StopSoftshop();
+                        RunTimedPhase("Encerramento do Softshop", () => StopSoftshop());
                         ThrowIfCancellationRequested();
-                        BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName), true);
+                        RunTimedPhase("Preservação das pastas", () => BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName), true));
                     }
                     ThrowIfCancellationRequested();
-                    if (updateDllsRequested) UpdateSoftcomDlls();
+                    if (updateDllsRequested) RunTimedPhase("Atualização de DLLs", UpdateSoftcomDlls);
                     else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
                 }
                 else
@@ -1280,20 +1309,20 @@ namespace SoftcomSupportAutomation
                     foreach (string directory in existingPdvDirectories)
                         WriteLog("Pasta do Softshop Caixa encontrada para preservação: " + directory);
                     ThrowIfCancellationRequested();
-                    UninstallAllSoftshopEntries();
+                    RunTimedPhase("Desinstalação do PDV", UninstallAllSoftshopEntries);
                     ThrowIfCancellationRequested();
-                    StopSoftshop();
+                    RunTimedPhase("Encerramento do Softshop", () => StopSoftshop());
                     ThrowIfCancellationRequested();
-                    BackupFolders(existingPdvDirectories, false);
+                    RunTimedPhase("Preservação das pastas", () => BackupFolders(existingPdvDirectories, false));
                     ThrowIfCancellationRequested();
-                    if (updateDllsRequested) UpdateSoftcomDlls();
+                    if (updateDllsRequested) RunTimedPhase("Atualização de DLLs", UpdateSoftcomDlls);
                     else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
                     msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
                         "Aguardando preparação do pacote do PDV após a desinstalação.",
                         "Não foi possível preparar o novo pacote do PDV após a desinstalação. Verifique o log e tente novamente.");
                 }
                 ThrowIfCancellationRequested();
-                InstallPdvMsi(msiPath);
+                RunTimedPhase("Instalação do PDV", () => InstallPdvMsi(msiPath));
                 if (fullReset)
                 {
                     ThrowIfCancellationRequested();
@@ -1303,17 +1332,20 @@ namespace SoftcomSupportAutomation
                 }
                 ThrowIfCancellationRequested();
                 WriteLog("Concluído com sucesso.");
+                workflowOutcome = "concluído";
                 ShowFinal(fullReset ? "Processo concluído.\r\nPrints e log: " + runFolder
                     : "Reinstalação Limpa concluída.\r\nLog: " + runFolder, MessageBoxIcon.Information);
             }
             catch (OperationCanceledException)
             {
+                workflowOutcome = "cancelado";
                 try { StopSoftshop(true); } catch { }
                 WriteLog("CANCELADO: processo interrompido pelo usuário.");
                 ShowFinal("Processo cancelado.\r\nLog: " + runFolder, MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
+                workflowOutcome = "falhou";
                 if (configurationPrints)
                 {
                     try { StopSoftshop(true); } catch { }
@@ -1334,6 +1366,7 @@ namespace SoftcomSupportAutomation
                 if (dialogWatcher != null && dialogWatcher.IsAlive)
                     dialogWatcher.Join();
                 packageCancellation.Dispose();
+                WritePhaseDuration("Total do atendimento (inclui tarefas paralelas)", workflowElapsed.Elapsed, workflowOutcome);
                 FinishAutomation();
             }
         }
@@ -2687,62 +2720,23 @@ namespace SoftcomSupportAutomation
             }
         }
 
-        private void DownloadFileWithCancellation(string address, string destination, string userAgent,
-            CancellationToken cancellationToken = default(CancellationToken))
-        {
-            ThrowIfCancellationRequested(cancellationToken);
-            if (File.Exists(destination)) File.Delete(destination);
-            using (var completed = new ManualResetEvent(false))
-            using (var client = new System.Net.WebClient())
-            {
-                Exception downloadError = null;
-                bool downloadCancelled = false;
-                client.Headers[System.Net.HttpRequestHeader.UserAgent] = userAgent;
-                client.DownloadFileCompleted += (sender, args) =>
-                {
-                    downloadError = args.Error;
-                    downloadCancelled = args.Cancelled;
-                    try { completed.Set(); } catch (ObjectDisposedException) { }
-                };
-                client.DownloadFileAsync(new Uri(address), destination);
-                while (!completed.WaitOne(250))
-                {
-                    if (!stopRequested && !cancellationToken.IsCancellationRequested) continue;
-                    client.CancelAsync();
-                    completed.WaitOne(5000);
-                    try { if (File.Exists(destination)) File.Delete(destination); } catch { }
-                    throw new OperationCanceledException("Download cancelado pelo usuário.");
-                }
-                if (stopRequested || cancellationToken.IsCancellationRequested || downloadCancelled)
-                {
-                    try { if (File.Exists(destination)) File.Delete(destination); } catch { }
-                    throw new OperationCanceledException("Download cancelado pelo usuário.");
-                }
-                if (downloadError != null)
-                {
-                    try { if (File.Exists(destination)) File.Delete(destination); } catch { }
-                    throw downloadError;
-                }
-            }
-        }
-
         private void ThrowIfCancellationRequested(CancellationToken cancellationToken = default(CancellationToken))
         {
             if (stopRequested) throw new OperationCanceledException("Execução cancelada pelo usuário.");
             cancellationToken.ThrowIfCancellationRequested();
         }
 
-        private void SleepWithCancellation(int milliseconds)
+        private void SleepWithCancellation(int milliseconds, CancellationToken cancellationToken = default(CancellationToken))
         {
             int remaining = milliseconds;
             while (remaining > 0)
             {
-                ThrowIfCancellationRequested();
+                ThrowIfCancellationRequested(cancellationToken);
                 int interval = Math.Min(100, remaining);
                 Thread.Sleep(interval);
                 remaining -= interval;
             }
-            ThrowIfCancellationRequested();
+            ThrowIfCancellationRequested(cancellationToken);
         }
 
         private void WaitForProcessExitWithCancellation(Process process, string action)

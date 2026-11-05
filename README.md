@@ -84,6 +84,14 @@ Os três modos compartilham o watcher de avisos conhecidos. Ele reconhece a mens
 
 Antes de cada preparação, apenas as saídas antigas `PDV_SoftshopCaixa_Selecionado.zip`, `PDV_SoftshopCaixa_Selecionado.rar` e `SetupSoftshopFrenteLoja.msi` são removidas da pasta `C:\Softcom\ResetCaixa\Download`.
 
+### Downloads em conexão instável e duração das etapas
+
+Os downloads de PDV, DLLs e HopToDesk usam o mesmo helper, com até três tentativas totais. Há nova tentativa somente para falhas de conexão/timeout e HTTP 408, 429, 500, 502, 503 e 504. Os intervalos padrão são de um e dois segundos, sempre canceláveis. Um `Retry-After` válido de até 30 segundos é respeitado; se o servidor pedir mais tempo, a rotina informa o erro sem antecipar outra tentativa. Cada espera por resposta/leitura tem limite de 60 segundos sem progresso, sem impor um tempo total curto ao arquivo que continua chegando.
+
+Arquivos parciais são descartados antes da próxima tentativa. Erros de disco, TLS/confiança, 401/403 e outros erros definitivos não são repetidos. SHA-256, assinatura e conteúdo são validados depois do download; reprovar uma dessas verificações não inicia um novo download. **Parar execução** cancela a transferência ou o intervalo e aguarda a operação de rede terminar antes de liberar outra execução.
+
+O log registra a duração da preparação do pacote, captura, encerramento do Softshop, desinstalação, preservação de pastas, DLLs, instalação e atendimento total, inclusive em falha/cancelamento. A preparação continua paralela: sua duração não deve ser somada à captura para calcular o tempo total. Uma falha ao gravar somente a medição não substitui o resultado original da operação.
+
 ### Caminho do PDV por arquitetura
 
 O caminho não é fixado no código. A rotina sempre testa `C:\Program Files\Softcom Tecnologia\Softshop Caixa\Softshop.exe` e `C:\Program Files (x86)\Softcom Tecnologia\Softshop Caixa\Softshop.exe`. Em Windows de 32 bits, prioriza `Program Files`; em Windows de 64 bits, prioriza `Program Files (x86)`. Diretórios inexistentes são simplesmente ignorados. No Reset Completo, a localização prioritária encontrada é usada para a captura; se houver cópias nas duas pastas, ambas são registradas no log e preservadas por renomeação após a desinstalação. Depois da instalação, os dois caminhos são verificados novamente para abrir o caixa. A Reinstalação Limpa registra previamente e preserva as pastas de instalação existentes nos dois caminhos, sem abrir o caixa ou alterar o LocalAppData. Prints de Configuração usa o executável prioritário encontrado para a mesma captura, sem renomear pastas.
@@ -174,6 +182,8 @@ Foi investigada uma alternativa sem argumento sensível. Na documentação e no 
 
 Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC.
 
+Ao finalizar, falhar ou cancelar, a Central tenta remover apenas `HopToDesk.exe` e seu `.partial` da pasta de download, depois de liberar o lock e encerrar o processo iniciado. Arquivo bloqueado ou sem permissão de exclusão gera aviso no log; a limpeza não remove o aplicativo instalado nem seus arquivos de configuração.
+
 Em 05/11/2026, o responsável confirmou aprovação dos testes reais de instalação nova, reinstalação, senha, conexão de outro dispositivo e funcionamento após reiniciar. Esse resultado foi informado pelo responsável, não reexecutado pelo agente; as versões e arquiteturas do Windows não foram especificadas.
 
 ## Stack do projeto
@@ -191,7 +201,7 @@ Em 05/11/2026, o responsável confirmou aprovação dos testes reais de instala�
 | Referências do framework | Microsoft.NETFramework.ReferenceAssemblies 1.0.3, somente durante o build |
 | Registro do Windows | `Microsoft.Win32`, consultando as visões de 32 e 64 bits |
 | Instalação e desinstalação | Windows Installer por `msiexec.exe` |
-| Downloads das automações | `System.Net.WebClient`, com cancelamento e limpeza de arquivos parciais |
+| Downloads das automações | `System.Net.HttpWebRequest`, com cancelamento, timeout de inatividade e retry seletivo |
 | Atalhos da Central Downloads | `Process.Start` com `UseShellExecute=true`, abrindo o navegador padrão |
 | Scripts administrativos | Windows PowerShell 5.1 e Batch/`cmd.exe`, incorporados como recursos |
 | Build | .NET SDK, MSBuild e NuGet |
@@ -205,6 +215,7 @@ SoftcomSupportAutomation/
 ├── Program.cs                         # Interface e fluxos de automação
 ├── HopToDesk.cs                       # Instalação, detecção e assinatura do HopToDesk
 ├── HopToDeskPassword.cs               # Campo de senha, execução protegida e verificação local
+├── DownloadHelpers.cs                # Download compartilhado, retry e timeout canceláveis
 ├── SoftcomSupportAutomation.csproj    # Configuração, versão e dependências
 ├── app.manifest                       # Execução obrigatória como administrador
 ├── Scripts/
@@ -277,12 +288,21 @@ Para uma nova versão:
 1. Altere apenas `<Version>` no projeto e atualize a versão/documentação deste README.
 2. Execute o build Release e confira metadados, abertura e extração ZIP/RAR com uma cópia isolada do EXE. Registre os testes reais aplicáveis e suas pendências.
 3. Revise o diff e faça o commit dos fontes e da documentação.
-4. A partir desse commit, compile e valide novamente o EXE para que a identificação do commit nos metadados corresponda à tag. Não publique uma cópia compilada a partir de outra revisão ou com alterações de código pendentes.
-5. Crie a tag `vMAJOR.MINOR.PATCH` e o GitHub Release com o EXE validado e notas que identifiquem mudanças, testes e pendências. Não mova tags nem substitua silenciosamente um binário já publicado; publique uma nova versão.
+4. Integre o PR e crie a tag `vMAJOR.MINOR.PATCH` no commit escolhido. Não publique uma cópia compilada a partir de outra revisão ou com alterações de código pendentes.
+5. Envie a tag ao GitHub. O workflow [verify-release.yml](.github/workflows/verify-release.yml) confere a tag contra `<Version>`, compila e executa os testes em Windows. Só depois publica o EXE testado no Release. O job de PR tem acesso de leitura; apenas o job de publicação por tag pode criar uma release. Tags/releases existentes não são substituídas automaticamente.
+
+Os mesmos testes podem ser executados localmente, sem instalar ou alterar serviços:
+
+```powershell
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Verify-Portable.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Verify-Workflow.ps1
+```
+
+O primeiro testa o EXE sozinho, recursos, ZIP/RAR, download/retry, cancelamento, limpeza e medições. O segundo executa as decisões do fluxo real com operações externas simuladas. Nenhum deles comprova instalação, F11/prints ou conexão remota reais. A fixture RAR de 127 bytes tem origem e licença registradas em [tests/fixtures](tests/fixtures/README.md).
 
 `bin/`, `obj/`, PDBs, logs e estado local do Visual Studio ficam fora do Git. A limpeza retirou esses artefatos apenas do índice e preservou os arquivos desta máquina; não reescreveu o histórico antigo. Os executáveis de distribuição devem ser publicados em [GitHub Releases](https://github.com/vinnivii/CopiadorPdv/releases), sem exigir DLLs, configuração ou instalação da própria Central.
 
-Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as próximas melhorias e sua ordem sugerida. A publicação da v2.13.3 ainda deve seguir o procedimento acima; o build local não cria uma release automaticamente.
+Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.3](docs/VALIDACAO-v2.13.3.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
 
 ## Observações de segurança
 

@@ -1,0 +1,69 @@
+name: Verificar e publicar Central
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Conferir tag e versao
+        shell: powershell
+        run: |
+          [xml]$project = Get-Content SoftcomSupportAutomation/SoftcomSupportAutomation.csproj
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version deve ser MAJOR.MINOR.PATCH' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw 'Tag diferente da versao do projeto'
+          }
+      - name: Build Release
+        run: dotnet build .\SoftcomSupportAutomation\SoftcomSupportAutomation.csproj -c Release
+      - name: Verificar EXE isolado e downloads
+        shell: powershell
+        run: .\tests\Verify-Portable.ps1
+      - name: Verificar fluxos com operacoes simuladas
+        shell: powershell
+        run: .\tests\Verify-Workflow.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ResetadorDePdvV2
+          path: SoftcomSupportAutomation/bin/Release/net48/ResetadorDePdvV2.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ResetadorDePdvV2
+          path: release
+      - name: Publicar EXE validado
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: >-
+          gh release create "$env:RELEASE_TAG" "release/ResetadorDePdvV2.exe"
+          --verify-tag --target "$env:RELEASE_COMMIT"
+          --title "Central de Automações Softcom $env:RELEASE_TAG"
+          --notes "Build Release e testes automatizados de EXE isolado, ZIP/RAR, download, cancelamento e fluxos simulados aprovados. Sem nova homologação de instalação real, Windows x86 ou elevação com outro usuário nesta versão."
+          --generate-notes

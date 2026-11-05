@@ -1,6 +1,6 @@
 # Avaliação do relatório e plano de implementação
 
-Data: 05/11/2026. Base avaliada: `a4564e8` (v2.13.2). Manutenção local preparada: v2.13.3.
+Data: 05/11/2026. Base avaliada: `a4564e8` (v2.13.2). Implementação dos itens 1 a 9: v2.13.3, em PR.
 
 ## Avaliação
 
@@ -11,7 +11,7 @@ Conferências realizadas no repositório:
 - Os 53 arquivos rastreados em `bin/` e `obj/` somavam **19.519.098 bytes** na árvore do commit. `processo.log` também estava rastreado. Os executáveis rastreados estavam dentro dessas pastas; não havia outro EXE de produção fora delas.
 - Os dois READMEs continham a mesma documentação. A versão estava repetida no projeto, na interface e em três chamadas de download.
 - Reset Completo e Reinstalação Limpa reutilizam `UpdateSoftcomDlls()`. O download do PDV é preparado antecipadamente e continua independente da captura/atualização de DLLs.
-- O downloader já trata cancelamento e arquivos parciais, mas não tem tentativas seletivas ou um timeout explícito de inatividade/progresso.
+- Na base avaliada, o downloader já tratava cancelamento/parciais, mas não tinha tentativas seletivas ou timeout explícito de inatividade. O PR implementa ambos no helper compartilhado.
 - A verificação de senha do HopToDesk usa o perfil do processo elevado e a configuração do serviço. O cenário com outro administrador merece teste antes de uma alteração.
 
 Ressalvas ao relatório:
@@ -34,11 +34,11 @@ Esforço relativo, considerando implementação e validação. P1 é uma verific
 | 2 | Ignorar e retirar builds/log do índice | Fácil | P1 | Aplicado localmente: 53 artefatos e um log deixam de ser rastreados; arquivos locais preservados. |
 | 3 | Versão única, metadados, UI e User-Agent | Fácil | P2 | Aplicado: `<Version>` é a origem; SDK gera metadados; C# lê a assembly. |
 | 4 | Registrar homologação e dados da build personalizada | Fácil para registrar | P1 | Cenários confirmados pelo responsável registrados; faltam versões/arquiteturas do Windows e identificação da máquina. Repetir a conferência após trocar a build do fornecedor. |
-| 5 | Padronizar tag e publicação do EXE em Releases | Fácil, com dependência de revisão | P1 | Padrão documentado. Commit/tag/publicação da manutenção ainda não executados. Na consulta desta revisão, a release marcada como Latest ainda era v2.12.1. |
-| 6 | Remover instalador temporário após uso | Fácil, mas benefício condicional | P3 | Adiar: decidir primeiro se o suporte quer conservar o arquivo para diagnóstico. Não fazer uma limpeza genérica de pastas. |
-| 7 | Verificar ZIP/RAR com EXE isolado e tratar binding se falhar | Média | P1 | Passou nesta máquina de desenvolvimento. Próximo passo: repetir em Windows limpo. Só alterar dependências se reproduzir falha ou surgir outra justificativa concreta. |
-| 8 | Medir duração das etapas | Média | P2 | Adicionar medições simples no log, sem mudar esperas ou criar infraestrutura de telemetria. |
-| 9 | Retry seletivo e cancelável no download | Média | P2 | Alteração concentrada no helper compartilhado; exige testes de rede, classificação de erro e cancelamento. |
+| 5 | Padronizar tag e publicação do EXE em Releases | Fácil, com dependência de revisão | P1 | Workflow incluído: verifica PR, valida versão da tag e publica somente o EXE aprovado. O PR não cria tag ou release automaticamente. |
+| 6 | Remover instalador temporário após uso | Fácil | P3 | Implementado a pedido do responsável: remove somente instalador/parcial conhecidos após liberar o processo/lock; bloqueio gera aviso. |
+| 7 | Verificar ZIP/RAR com EXE isolado e tratar binding se falhar | Média | P1 | Testes reproduzíveis incluídos e executados. Não reproduzida falha de binding; diferenças de referências documentadas, sem atualizar pacotes cegamente. |
+| 8 | Medir duração das etapas | Média | P2 | Implementado: fases e total, com sucesso/falha/cancelamento e distinção de tarefas paralelas. |
+| 9 | Retry seletivo e cancelável no download | Média | P2 | Implementado no helper compartilhado: três tentativas, erros transitórios, Retry-After limitado e cancelamento durante leitura/intervalo. |
 | 10 | Homologar elevação com outro administrador | Média/alta | P2 | Precisa de conta padrão, outra conta administrativa e ambiente controlado. Corrigir somente se o teste demonstrar divergência. |
 | 11 | Homologar pacote personalizado no Windows 32 bits | Alta operacional | P1 se x86 é suportado | Exige máquina/VM x86 e teste real. Cabeçalho PE32 sozinho não comprova compatibilidade do Windows ou de dependências. |
 | 12 | Separar `Program.cs` gradualmente | Alta pelo custo de regressão | P3 / quando necessário | Adiar a divisão geral. Cada movimentação precisa manter corpo dos métodos, ordem, estado, cancelamento e UI Automation. |
@@ -72,7 +72,7 @@ Não foram alteradas instalações, senhas, serviços ou configurações do Wind
 
 Saída local: `SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe`.
 
-Antes de publicar: revisar o commit de manutenção, compilar/validar a partir dele e anexar o EXE ao Release. A limpeza está preparada no índice; não foi criado commit, tag ou release automaticamente e não houve push nesta tarefa. O build local não substitui o arquivo da release pública.
+Publicação: revisar e integrar o PR; depois enviar a tag da versão. O workflow compila e testa a revisão marcada antes de criar o Release. Não há publicação de release apenas por abrir/integrar o PR. As duas exclusões locais de relatórios preexistentes continuam fora desta entrega.
 
 ## Etapa B — fechar a evidência da distribuição
 
@@ -85,7 +85,7 @@ Aceite: EXE sozinho abre e extrai os formatos usados; metadados/tag/notas identi
 
 ## Etapa C — confiabilidade de rede e observação
 
-Implementar separadamente, para permitir revisão e reversão pequenas.
+Itens C1 e C2 implementados neste PR, mantendo a ordem e as condições dos fluxos. Os testes estão em `tests/` e os resultados em [VALIDACAO-v2.13.3](VALIDACAO-v2.13.3.md).
 
 ### C1. Tentativas seletivas de download
 
@@ -108,7 +108,7 @@ Aceite: log mostra onde houve espera e qual fase falhou/cancelou; a ordem e as c
 
 1. Testar instalação de HopToDesk partindo de usuário padrão e elevando a Central com outra conta. Identificar quais perfis o próprio comando configura e quais o serviço utiliza. Corrigir o alvo da verificação se houver evidência de falsa falha; não editar manualmente os TOMLs nem procurar senhas de outros perfis.
 2. Homologar Windows x86 se a Central continuar sendo distribuída para ele. Registrar arquitetura do pacote, instalação, serviço, senha e conexão real. Não anunciar suporte apenas por o instalador ser um PE32.
-3. Reavaliar a retenção do instalador somente se os resíduos de disco forem um problema. Se aprovada a exclusão, remover apenas o arquivo conhecido, após o processo terminar e o lock ser liberado; testar sucesso, falha e cancelamento.
+3. A exclusão do instalador conhecido já foi autorizada e implementada no item 6. Qualquer limpeza adicional de arquivos temporários continua fora do escopo.
 
 Aceite: resultados por ambiente e perfil documentados; nenhuma alteração de senha ou instalação fora da máquina de homologação; regras de preservação e cancelamento mantidas.
 
