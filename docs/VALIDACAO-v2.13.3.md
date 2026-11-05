@@ -38,6 +38,25 @@ Verificações locais aprovadas:
 | Medições | Sucesso, falha e cancelamento registrados; falha de escrita do log não substitui a exceção original. |
 | Fluxos simulados | Reinstalação Limpa com/sem DLLs; preservação dos dois caminhos e LocalAppData intocado; Reset Completo só desinstala depois do pacote; Prints sem instalação/DLLs; falha/cancelamento impedem instalação posterior. |
 
+## Revisão do download antes do merge
+
+`WaitForDownloadIo<T>` passou a usar `Task.WaitAny` em lugar de `Thread.Sleep(100)`. A espera desperta quando a Task termina ou o token é cancelado, preservando a exceção original em `GetAwaiter().GetResult()`. A checagem de `stopRequested` continua a cada no máximo 100 ms de espera, sujeita ao escalonamento do Windows. Timeout de inatividade de 60 segundos, abort/aguardo da operação e política de retry não mudaram; SHA-256, assinatura e extração não foram alterados.
+
+O teste de regressão serve **10 MiB (10.485.760 bytes)** por HTTP local em **160 blocos de 64 KiB**, liberando o próximo somente depois da gravação do anterior. Isso impede que o buffering esconda a espera fixa por leitura. Todos os bytes são conferidos; o limite do teste é 8 segundos (média abaixo de 50 ms por bloco), com margem para o servidor e o disco. O teste novo falhou com o EXE anterior à correção e passou com a espera baseada na Task.
+
+Medições locais em Windows 10 Pro 10.0.19045, 64 bits:
+
+| Cenário | Resultado |
+| --- | --- |
+| Espera anterior, `Thread.Sleep(100)` | 17.432 ms; 108,95 ms/bloco; teste de desempenho reprovado. |
+| Espera corrigida, `Task.WaitAny` | 1.424 ms; 8,90 ms/bloco; 1 requisição, todos os bytes corretos. |
+| Cancelamento durante transferência | Token: 19 ms após o sinal; `stopRequested`: 61 ms; parcial removido, sem retry. |
+| Cancelamento durante intervalo de retry | Token e `stopRequested`: 62 ms após o sinal; sem nova requisição. |
+| Leitura interrompida por inatividade | Limite de teste de 200 ms observado em 219 ms; requisição abortada e Task encerrada. |
+| Transferência truncada | Recuperação na segunda tentativa; falha persistente encerrada na terceira, sem parcial. |
+
+Esses tempos medem um cenário local controlado, não a velocidade dos servidores de produção. Build Release, testes de EXE isolado/ZIP/RAR e fluxos simulados passaram novamente; continuam os três avisos de binding já descritos abaixo. A correção permanece na v2.13.3 ainda em revisão, sem nova dependência ou publicação de release.
+
 ## Investigação dos avisos de binding
 
 O build Release mantém três avisos MSB3277. Conferência das identidades das assemblies locais:

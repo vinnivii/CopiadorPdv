@@ -120,7 +120,7 @@ namespace SoftcomSupportAutomation
                     ThrowIfCancellationRequested(cancellationToken);
                     if (elapsed.ElapsedMilliseconds >= inactivityTimeoutMilliseconds)
                         throw new WebException("Download sem progresso por tempo demais.", WebExceptionStatus.Timeout);
-                    Thread.Sleep(100);
+                    Task.WaitAny(new Task[] { operation }, 100, cancellationToken);
                 }
                 ThrowIfCancellationRequested(cancellationToken);
                 return operation.GetAwaiter().GetResult();

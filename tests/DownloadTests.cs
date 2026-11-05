@@ -93,6 +93,40 @@ public static class DownloadTests
         Type type = form.GetType();
         var flags = BindingFlags.Instance | BindingFlags.NonPublic;
         var stop = type.GetField("stopRequested", flags);
+        const int blockSize = 64 * 1024;
+        var payload = new byte[10 * 1024 * 1024];
+        for (int i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 31 + i / blockSize);
+        using (var server = new Server((n, stream, halt) =>
+        {
+            Reply(stream, 200, "", "", payload.Length);
+            for (int offset = 0; offset < payload.Length; offset += blockSize)
+            {
+                stream.Write(payload, offset, blockSize);
+                stream.Flush();
+                // Aguarda a gravacao do bloco para o buffering nao esconder uma espera fixa por leitura.
+                var waiting = Stopwatch.StartNew();
+                while (!File.Exists(output) || new FileInfo(output).Length < offset + blockSize)
+                {
+                    if (halt.WaitOne(1)) return;
+                    if (waiting.ElapsedMilliseconds > 5000) throw new TimeoutException("Cliente nao consumiu o bloco de teste");
+                }
+            }
+        }))
+        {
+            var elapsed = Stopwatch.StartNew();
+            Exception error = Download(form, server.Url, output, CancellationToken.None);
+            elapsed.Stop();
+            int blocks = payload.Length / blockSize;
+            Console.WriteLine("MEASURE: 10 MiB, {0} blocos de 64 KiB: {1:F0} ms ({2:F2} ms/bloco)",
+                blocks, elapsed.Elapsed.TotalMilliseconds, elapsed.Elapsed.TotalMilliseconds / blocks);
+            Check(error == null && server.Requests == 1, "Download de 10 MiB em blocos sem retry");
+            byte[] received = File.ReadAllBytes(output);
+            bool matches = received.Length == payload.Length;
+            for (int i = 0; matches && i < received.Length; i++) matches = received[i] == payload[i];
+            Check(matches, "Todos os bytes dos 10 MiB conferem");
+            Check(elapsed.Elapsed.TotalMilliseconds < blocks * 50,
+                "Transferencia em blocos abaixo de 50 ms/bloco, sem penalidade fixa de 100 ms por leitura");
+        }
         using (var server = new Server((n, stream, halt) => Reply(stream, n == 1 ? 503 : 200, n == 1 ? "" : "ok")))
         {
             Exception error = Download(form, server.Url, output, CancellationToken.None);
@@ -125,6 +159,12 @@ public static class DownloadTests
             Exception error = Download(form, server.Url, output, CancellationToken.None);
             Check(error == null && server.Requests == 2 && File.ReadAllText(output) == "ok", "Conexao truncada repetida sem reutilizar parcial");
         }
+        using (var server = new Server((n, stream, halt) => Reply(stream, 200, "x", "", 20)))
+        {
+            Exception error = Download(form, server.Url, output, CancellationToken.None);
+            Check(error is WebException && server.Requests == 3 && !File.Exists(output),
+                "Falha persistente durante transferencia limita tres tentativas e remove parcial");
+        }
         foreach (bool backoff in new[] { false, true })
         foreach (bool useStop in new[] { false, true })
         using (var server = new Server((n, stream, halt) =>
@@ -133,13 +173,23 @@ public static class DownloadTests
             else { Reply(stream, 200, "x", "", 1000000); halt.WaitOne(5000); }
         }))
         using (var token = new CancellationTokenSource())
-        using (var timer = new System.Threading.Timer(_ => { if (useStop) stop.SetValue(form, true); else token.Cancel(); }, null, 250, Timeout.Infinite))
         {
             var elapsed = Stopwatch.StartNew();
-            Exception error = Download(form, server.Url, output, token.Token);
-            stop.SetValue(form, false);
-            Check(error is OperationCanceledException && server.Requests == 1 && !File.Exists(output) && elapsed.ElapsedMilliseconds < 2000,
-                "Cancelamento durante " + (backoff ? "intervalo" : "transferencia") + " por " + (useStop ? "stopRequested" : "token"));
+            long cancelledAt = 0;
+            using (var timer = new System.Threading.Timer(_ =>
+            {
+                Interlocked.Exchange(ref cancelledAt, elapsed.ElapsedMilliseconds);
+                if (useStop) stop.SetValue(form, true); else token.Cancel();
+            }, null, 250, Timeout.Infinite))
+            {
+                Exception error = Download(form, server.Url, output, token.Token);
+                long latency = elapsed.ElapsedMilliseconds - Interlocked.Read(ref cancelledAt);
+                stop.SetValue(form, false);
+                string scenario = (backoff ? "intervalo" : "transferencia") + " por " + (useStop ? "stopRequested" : "token");
+                Console.WriteLine("MEASURE: cancelamento durante {0}: {1} ms apos sinal", scenario, latency);
+                Check(error is OperationCanceledException && server.Requests == 1 && !File.Exists(output) &&
+                    cancelledAt > 0 && latency < 1000 && elapsed.ElapsedMilliseconds < 2000, "Cancelamento durante " + scenario);
+            }
         }
         using (var server = new Server((n, stream, halt) => Reply(stream, 200, "ok")))
         {
@@ -167,6 +217,28 @@ public static class DownloadTests
             catch (TargetInvocationException ex) { error = ex.InnerException; }
             Check(error is WebException && ((WebException)error).Status == WebExceptionStatus.Timeout && pending.IsCompleted,
                 "Timeout de inatividade aborta e aguarda a operacao, sem tarefa orfa");
+        }
+        using (var server = new Server((n, stream, halt) => { Reply(stream, 200, "x", "", 1000000); halt.WaitOne(5000); }))
+        {
+            var request = WebRequest.CreateHttp(server.Url);
+            using (var response = request.GetResponse())
+            using (Stream source = response.GetResponseStream())
+            {
+                Check(source.ReadByte() == 'x', "Transferencia iniciada antes do teste de inatividade");
+                Task<int> pending = source.ReadAsync(new byte[4096], 0, 4096);
+                Exception error = null;
+                var elapsed = Stopwatch.StartNew();
+                try
+                {
+                    type.GetMethod("WaitForDownloadIo", flags).MakeGenericMethod(typeof(int))
+                        .Invoke(form, new object[] { pending, request, CancellationToken.None, 200 });
+                }
+                catch (TargetInvocationException ex) { error = ex.InnerException; }
+                Console.WriteLine("MEASURE: timeout de leitura de 200 ms: {0} ms", elapsed.ElapsedMilliseconds);
+                Check(error is WebException && ((WebException)error).Status == WebExceptionStatus.Timeout &&
+                    pending.IsCompleted && elapsed.ElapsedMilliseconds >= 200 && elapsed.ElapsedMilliseconds < 1500,
+                    "Timeout durante transferencia aborta e aguarda leitura, sem tarefa orfa");
+            }
         }
         var retry = type.GetMethod("GetDownloadRetryDelay", BindingFlags.NonPublic | BindingFlags.Static);
         foreach (WebExceptionStatus status in new[] { WebExceptionStatus.TrustFailure, WebExceptionStatus.SecureChannelFailure, WebExceptionStatus.RequestCanceled })
