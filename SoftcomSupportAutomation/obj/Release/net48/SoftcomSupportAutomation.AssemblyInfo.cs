@@ -14,11 +14,11 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyCopyrightAttribute("by Marcus Silva - Teresina")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("by Marcus Silva - Teresina")]
-[assembly: System.Reflection.AssemblyFileVersionAttribute("2.9.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("2.9.0")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("2.13.2.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("2.13.2+409c1cd84397139067002b180e40a7a781434600")]
 [assembly: System.Reflection.AssemblyProductAttribute("Central de Automações Softcom V2")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Central de Automações Softcom V2 - by Marcus Silva - Teresina")]
-[assembly: System.Reflection.AssemblyVersionAttribute("2.9.0.0")]
+[assembly: System.Reflection.AssemblyVersionAttribute("2.13.2.0")]
 
 // Gerado pela classe WriteCodeFragment do MSBuild.
 

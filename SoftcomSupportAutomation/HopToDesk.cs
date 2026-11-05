@@ -15,8 +15,8 @@ namespace SoftcomSupportAutomation
 {
     internal sealed partial class SupportForm
     {
-        // Troque a URL pelo instalador do Client Builder quando Softcom Remoto estiver disponível.
-        private const string HopToDeskDownloadUrl = "https://dl.hoptodesk.com/HopToDesk.exe";
+        // Instalador personalizado gerado pelo Client Builder oficial do HopToDesk.
+        private const string HopToDeskDownloadUrl = "https://dashboard.hoptodesk.com/downloads/custom-builds/6586/softhecomremoto.exe";
         private const string HopToDeskPublisher = "Begonia Holdings LLC";
         private const string HopToDeskFolder = @"C:\Softcom\ResetCaixa\HopToDesk";
         private const string HopToDeskServiceName = "HopToDesk";
@@ -109,7 +109,7 @@ namespace SoftcomSupportAutomation
                 // Nunca reutiliza uma saída antiga, mesmo depois de uma falha ou interrupção.
                 if (File.Exists(installerPath)) File.Delete(installerPath);
                 WriteLog("Baixando instalador oficial do HopToDesk.");
-                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, "SoftcomSupportAutomation/2.13.1");
+                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, "SoftcomSupportAutomation/2.13.2");
                 ThrowIfCancellationRequested();
                 File.Move(partialPath, installerPath);
 

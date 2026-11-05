@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.13.1**
+Versão atual: **2.13.2**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -156,7 +156,7 @@ Os utilitários existentes ficam à esquerda e o card do **HopToDesk** à direit
 Antes de iniciar, preencha a senha ou desmarque o checkbox. O campo é limpo e volta a ficar oculto assim que a execução começa. A senha dessa execução não é reutilizada nas próximas; uma nova senha deve ser digitada a cada atendimento. Desmarcar a opção também limpa o campo.
 
 1. Detecta o serviço, os registros de instalação nas visões de 32/64 bits e os executáveis em `Program Files` e `Program Files (x86)`. Se já houver instalação, pergunta se deseja reinstalar/atualizar; a opção padrão é **Não**. A mensagem avisa quando a senha será substituída pela informada.
-2. Baixa sob demanda `https://dl.hoptodesk.com/HopToDesk.exe` para `C:\Softcom\ResetCaixa\HopToDesk\HopToDesk.exe.partial`. Nenhuma consulta é feita na inicialização da Central.
+2. Baixa sob demanda o instalador personalizado do Client Builder oficial, `https://dashboard.hoptodesk.com/downloads/custom-builds/6586/softhecomremoto.exe`, para `C:\Softcom\ResetCaixa\HopToDesk\HopToDesk.exe.partial`. Nenhuma consulta é feita na inicialização da Central.
 3. Verifica tamanho, cabeçalhos de executável Windows e assinatura Authenticode confiável de **Begonia Holdings LLC** com `WinVerifyTrust`, usando os certificados locais e o cache do Windows, sem consulta online de revogação. Downloads parciais ou inválidos são descartados.
 4. Executa `HopToDesk.exe --silent-install` diretamente em C#, com timeout de cinco minutos e cancelamento, e confirma o executável instalado e o serviço em execução.
 5. Se selecionado, executa o aplicativo instalado com o argumento oficial `--password`, passando a senha apenas em memória. Não usa shell intermediário. Aspas, espaços, barras, Unicode e metacaracteres são tratados como parte de um único argumento literal. O limite de 128 bytes UTF-8 segue o armazenamento nativo observado no código do HopToDesk.
@@ -172,7 +172,7 @@ A Central não tem senha fixa do HopToDesk e não salva a senha digitada em arqu
 
 Foi investigada uma alternativa sem argumento sensível. Na documentação e no código oficial consultados em 05/11/2026 não foi encontrada opção pública `--password-stdin` ou equivalente; o MCP público não oferece configuração da senha local e o IPC interno rejeita outros executáveis. A configuração manual na janela nativa evita o argumento de linha de comando. A automação mantém o comando oficial solicitado, sem tentar contornar o bloqueio do IPC. Referências: [tratamento de `--password`](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/core_main.rs), [proteção do IPC](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/ipc/auth.rs), [armazenamento nativo](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/libs/hbb_common/src/config.rs).
 
-Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. Não há cadastro ou dependência do Dashboard. Para o futuro **Softcom Remoto**, substitua `HopToDeskDownloadUrl` em `HopToDesk.cs` e confira as constantes de editor/serviço e os caminhos nativos antes de homologar o instalador personalizado.
+Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC; a instalação real desse pacote ainda depende de homologação.
 
 ## Stack do projeto
 
@@ -251,7 +251,7 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.13.1**, utilize o executável da saída acima; opcionalmente, nomeie a cópia `ResetadorDePdvV2.13.1.exe`.
+Para distribuir a versão **2.13.2**, utilize o executável da saída acima; opcionalmente, nomeie a cópia `ResetadorDePdvV2.13.2.exe`.
 
 Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do HopToDesk utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
 

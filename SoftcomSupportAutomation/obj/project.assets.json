@@ -1074,7 +1074,7 @@
     "C:\\Users\\user\\.nuget\\packages\\": {}
   },
   "project": {
-    "version": "2.9.0",
+    "version": "2.13.2",
     "restore": {
       "projectUniqueName": "C:\\Users\\user\\Pictures\\Biblioteca\\CopiadorPdv\\SoftcomSupportAutomation\\SoftcomSupportAutomation.csproj",
       "projectName": "ResetadorDePdvV2",
