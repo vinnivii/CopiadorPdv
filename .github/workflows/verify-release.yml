@@ -32,7 +32,7 @@ jobs:
           }
       - name: Build Release
         run: dotnet build .\SoftcomSupportAutomation\SoftcomSupportAutomation.csproj -c Release
-      - name: Verificar EXE isolado e downloads
+      - name: Verificar EXE isolado, downloads e dialogos
         shell: powershell
         run: .\tests\Verify-Portable.ps1
       - name: Verificar fluxos com operacoes simuladas

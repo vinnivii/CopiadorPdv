@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.13.3**
+Versão atual: **2.13.4**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -21,7 +21,7 @@ O botão global **Parar execução** fica disponível enquanto uma automação e
 | Ajuste Update RDP | Executa o ajuste de confirmação de dados do cliente RDP no Windows 11. |
 | Reinicialização do Softconnect | Finaliza o processo atual e abre o Softconnect novamente. |
 | Limpeza da fila de impressão | Reinicia o serviço Spooler e remove documentos travados na fila. |
-| HopToDesk | Baixa o instalador oficial, valida a assinatura, instala silenciosamente e abre o aplicativo para consulta do ID. |
+| Softhecom Remoto | Baixa o instalador personalizado pelo GitHub Releases, valida a assinatura, instala silenciosamente e abre o aplicativo para consulta do ID. |
 
 Os scripts PowerShell e Batch são incorporados ao executável sem alterações. Durante a execução, eles são extraídos para `C:\Softcom\ResetCaixa\Scripts` e abertos em uma janela administrativa visível, preservando as mensagens e pausas dos arquivos originais.
 
@@ -47,6 +47,10 @@ Na página **Softshop Caixa**, selecione **Reset Completo / Instalação do PDV*
 Se o download, o SHA-256 ou a extração falharem, a captura pode terminar, mas o PDV existente **não é desinstalado**. O log e a mensagem final informam: “Não foi possível preparar o novo pacote do PDV. A instalação atual foi mantida.”
 
 Quando `Softshop.exe` não existe nos caminhos verificados, o Reset entra em **instalação nova**: pula captura, desinstalação e renomeação de pastas, aguarda o pacote, respeita a atualização opcional das DLLs e instala e abre o caixa nas Configurações.
+
+### Aviso de inicialização com Avalonia
+
+A Central acompanha o PID do Softshop desde a abertura, antes do login, e registra a versão real do executável aberto, separada da versão selecionada para instalar. O monitor procura `Avalonia`, sem diferenciar maiúsculas, no título ou texto visível de uma janela desse processo e aciona somente seu botão **OK** visível e habilitado. Não usa o nome da classe gráfica, não fecha avisos de outros processos e respeita a parada. Se o login não aparecer, o Reset Completo interrompe antes de desinstalar e cancela a preparação paralela. Esse tratamento dispensa um aviso; não corrige uma falha fatal de inicialização do PDV.
 
 ### Reinstalação Limpa
 
@@ -86,7 +90,7 @@ Antes de cada preparação, apenas as saídas antigas `PDV_SoftshopCaixa_Selecio
 
 ### Downloads em conexão instável e duração das etapas
 
-Os downloads de PDV, DLLs e HopToDesk usam o mesmo helper, com até três tentativas totais. Há nova tentativa somente para falhas de conexão/timeout e HTTP 408, 429, 500, 502, 503 e 504. Os intervalos padrão são de um e dois segundos, sempre canceláveis. Um `Retry-After` válido de até 30 segundos é respeitado; se o servidor pedir mais tempo, a rotina informa o erro sem antecipar outra tentativa. Cada espera por resposta/leitura tem limite de 60 segundos sem progresso, sem impor um tempo total curto ao arquivo que continua chegando.
+Os downloads de PDV, DLLs e Softhecom Remoto usam o mesmo helper, com até três tentativas totais. Há nova tentativa somente para falhas de conexão/timeout e HTTP 408, 429, 500, 502, 503 e 504. Os intervalos padrão são de um e dois segundos, sempre canceláveis. Um `Retry-After` válido de até 30 segundos é respeitado; se o servidor pedir mais tempo, a rotina informa o erro sem antecipar outra tentativa. Cada espera por resposta/leitura tem limite de 60 segundos sem progresso, sem impor um tempo total curto ao arquivo que continua chegando.
 
 Arquivos parciais são descartados antes da próxima tentativa. Erros de disco, TLS/confiança, 401/403 e outros erros definitivos não são repetidos. SHA-256, assinatura e conteúdo são validados depois do download; reprovar uma dessas verificações não inicia um novo download. **Parar execução** cancela a transferência ou o intervalo e aguarda a operação de rede terminar antes de liberar outra execução.
 
@@ -157,32 +161,32 @@ Cada botão **Baixar** apenas abre a URL cadastrada no navegador padrão do Wind
 
 Os nomes e links são compilados no próprio EXE, sem arquivo externo de configuração. Não há consultas de rede ou verificação de disponibilidade na abertura da aplicação; o endereço só é aberto quando o técnico clica.
 
-## HopToDesk nos Utilitários
+## Softhecom Remoto nos Utilitários
 
-Os utilitários existentes ficam à esquerda e o card do **HopToDesk** à direita, mantendo a janela em 1040 × 700. O card oferece **Configurar senha permanente**, marcado por padrão, o campo **Senha permanente de acesso**, inicialmente vazio e oculto (`UseSystemPasswordChar = true`), e o botão **Mostrar/Ocultar**.
+Os utilitários existentes ficam à esquerda e o card do **Softhecom Remoto** à direita, mantendo a janela em 1040 × 700. O card oferece **Configurar senha permanente**, marcado por padrão, o campo **Senha permanente de acesso**, inicialmente vazio e oculto (`UseSystemPasswordChar = true`), e o botão **Mostrar/Ocultar**.
 
 Antes de iniciar, preencha a senha ou desmarque o checkbox. O campo é limpo e volta a ficar oculto assim que a execução começa. A senha dessa execução não é reutilizada nas próximas; uma nova senha deve ser digitada a cada atendimento. Desmarcar a opção também limpa o campo.
 
 1. Detecta o serviço, os registros de instalação nas visões de 32/64 bits e os executáveis em `Program Files` e `Program Files (x86)`. Se já houver instalação, pergunta se deseja reinstalar/atualizar; a opção padrão é **Não**. A mensagem avisa quando a senha será substituída pela informada.
-2. Baixa sob demanda o instalador personalizado do Client Builder oficial, `https://dashboard.hoptodesk.com/downloads/custom-builds/6586/softhecomremoto.exe`, para `C:\Softcom\ResetCaixa\HopToDesk\HopToDesk.exe.partial`. Nenhuma consulta é feita na inicialização da Central.
+2. Baixa sob demanda o instalador personalizado com assinatura do fabricante, hospedado no GitHub Releases, `https://github.com/vinnivii/CopiadorPdv/releases/download/softhecom-remoto-v1.46.80/softhecomremoto-install.exe`, para `C:\Softcom\ResetCaixa\SofthecomRemoto\softhecomremoto-install.exe.partial`. Nenhuma consulta é feita na inicialização da Central.
 3. Verifica tamanho, cabeçalhos de executável Windows e assinatura Authenticode confiável de **Begonia Holdings LLC** com `WinVerifyTrust`, usando os certificados locais e o cache do Windows, sem consulta online de revogação. Downloads parciais ou inválidos são descartados.
-4. Executa `HopToDesk.exe --silent-install` diretamente em C#, com timeout de cinco minutos e cancelamento, e confirma o executável instalado e o serviço em execução.
+4. Executa `softhecomremoto-install.exe --silent-install` diretamente em C#, com timeout de cinco minutos e cancelamento, e confirma o executável instalado e o serviço em execução.
 5. Se selecionado, executa o aplicativo instalado com o argumento oficial `--password`, passando a senha apenas em memória. Não usa shell intermediário. Aspas, espaços, barras, Unicode e metacaracteres são tratados como parte de um único argumento literal. O limite de 128 bytes UTF-8 segue o armazenamento nativo observado no código do HopToDesk.
 6. Exige o marcador de sucesso do comando e verifica, somente por leitura, a presença da senha permanente nas configurações nativas do usuário e do serviço. Não descriptografa, exporta ou regrava o valor. O código de saída zero sozinho não comprova sucesso.
 7. Confere as opções nativas de acesso não supervisionado, método de senha, aprovação de conexão, conexões de entrada, SSO e acesso por conta. Se o acesso não for confirmado, informa a pendência e orienta ativá-lo/conferi-lo no aplicativo. Não altera políticas de segurança existentes nem declara o acesso pronto nessa situação.
 8. Abre o aplicativo instalado para o técnico conferir o ID e testar uma conexão de outro dispositivo. A verificação local não substitui esse teste real de conexão.
 
-Com **Configurar senha permanente** desmarcado, instala e abre normalmente, sem executar `--password` nem alterar senhas/opções de acesso. Os comandos de instalação e senha estão na [ajuda oficial do HopToDesk](https://help.hoptodesk.com/help).
+Com **Configurar senha permanente** desmarcado, instala e abre normalmente, sem executar `--password` nem alterar senhas/opções de acesso. Os comandos de instalação e senha seguem a [ajuda oficial do projeto original](https://help.hoptodesk.com/help).
 
-A Central não tem senha fixa do HopToDesk e não salva a senha digitada em arquivos, configurações, logs ou mensagens de erro. Descarta stdout/stderr do comando e zera o buffer temporário ao concluir, falhar, cancelar ou recusar a reinstalação. O próprio HopToDesk mantém sua configuração nativa de senha criptografada, necessária para que ela seja permanente; a Central apenas verifica sua presença. **Parar execução** interrompe o processo iniciado, impede próximas etapas e descarta a senha dessa execução, mas não desfaz uma senha que o aplicativo já tenha aplicado.
+A Central não tem senha fixa do Softhecom Remoto e não salva a senha digitada em arquivos, configurações, logs ou mensagens de erro. Descarta stdout/stderr do comando e zera o buffer temporário ao concluir, falhar, cancelar ou recusar a reinstalação. O próprio Softhecom Remoto mantém sua configuração nativa de senha criptografada, necessária para que ela seja permanente; a Central apenas verifica sua presença. **Parar execução** interrompe o processo iniciado, impede próximas etapas e descarta a senha dessa execução, mas não desfaz uma senha que o aplicativo já tenha aplicado.
 
 **Exposição pela linha de comando:** `--password` exige a senha como argumento. Durante a execução, usuários/processos com permissão de inspeção podem vê-la nos detalhes do processo; ferramentas de auditoria do Windows ou de terceiros também podem registrar a linha de comando. Ocultar a janela e o campo não elimina essa exposição. A Central não exibe nem registra os argumentos.
 
 Foi investigada uma alternativa sem argumento sensível. Na documentação e no código oficial consultados em 05/11/2026 não foi encontrada opção pública `--password-stdin` ou equivalente; o MCP público não oferece configuração da senha local e o IPC interno rejeita outros executáveis. A configuração manual na janela nativa evita o argumento de linha de comando. A automação mantém o comando oficial solicitado, sem tentar contornar o bloqueio do IPC. Referências: [tratamento de `--password`](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/core_main.rs), [proteção do IPC](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/src/ipc/auth.rs), [armazenamento nativo](https://gitlab.com/hoptodesk/hoptodesk/-/blob/main/libs/hbb_common/src/config.rs).
 
-Os logs ficam em `C:\Softcom\ResetCaixa\HopToDesk\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL personalizada está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`; nomes, serviços, caminhos e comandos permanecem iguais aos do fluxo existente, conforme a configuração informada pelo responsável. O download não exige login ou integração com o Dashboard pela Central. O arquivo fornecido foi conferido em 05/11/2026: versão 1.46.80 e assinatura válida de Begonia Holdings LLC.
+Os logs ficam em `C:\Softcom\ResetCaixa\SofthecomRemoto\<data-hora>\processo.log`. O instalador é baixado somente no uso e **não é incorporado ao EXE da Central**. A URL fixa do asset está centralizada em `HopToDeskDownloadUrl`, em `HopToDesk.cs`. A variante personalizada usa o serviço, executável e configuração nativa `SofthecomRemoto`; a detecção também reconhece instalações anteriores de `HopToDesk`, mas apenas o serviço personalizado confirma a instalação nova. As pastas e logs antigos não são removidos. O download não exige Dashboard ou login. O arquivo original 1.46.80, com 9.672.072 bytes e assinatura válida de Begonia Holdings LLC, foi publicado e baixado novamente em 06/11/2026; SHA-256 conferido: `86c461206166759a1857817eda648a9b213e806de91ff338fdb0006cbbbffe65`. A release própria do remoto não é marcada como a mais recente da Central. Download, instalação e confirmação do serviço têm durações separadas no log.
 
-Ao finalizar, falhar ou cancelar, a Central tenta remover apenas `HopToDesk.exe` e seu `.partial` da pasta de download, depois de liberar o lock e encerrar o processo iniciado. Arquivo bloqueado ou sem permissão de exclusão gera aviso no log; a limpeza não remove o aplicativo instalado nem seus arquivos de configuração.
+Ao finalizar, falhar ou cancelar, a Central tenta remover apenas `softhecomremoto-install.exe` e seu `.partial` da pasta de download, depois de liberar o lock e encerrar o processo iniciado. Arquivo bloqueado ou sem permissão de exclusão gera aviso no log; a limpeza não remove o aplicativo instalado nem seus arquivos de configuração.
 
 Em 05/11/2026, o responsável confirmou aprovação dos testes reais de instalação nova, reinstalação, senha, conexão de outro dispositivo e funcionamento após reiniciar. Esse resultado foi informado pelo responsável, não reexecutado pelo agente; as versões e arquiteturas do Windows não foram especificadas.
 
@@ -213,7 +217,7 @@ Em 05/11/2026, o responsável confirmou aprovação dos testes reais de instala�
 ```text
 SoftcomSupportAutomation/
 ├── Program.cs                         # Interface e fluxos de automação
-├── HopToDesk.cs                       # Instalação, detecção e assinatura do HopToDesk
+├── HopToDesk.cs                       # Instalação, detecção e assinatura do Softhecom Remoto
 ├── HopToDeskPassword.cs               # Campo de senha, execução protegida e verificação local
 ├── DownloadHelpers.cs                # Download compartilhado, retry e timeout canceláveis
 ├── SoftcomSupportAutomation.csproj    # Configuração, versão e dependências
@@ -236,7 +240,7 @@ SoftcomSupportAutomation/
 | `C:\Softcom\ResetCaixa\DLLs` | RAR e MSI do SetupSoftcomDLLs. |
 | `C:\Softcom\ResetCaixa\SoftcomBackup\<data-hora>` | Log da atualização do SoftcomBackup. |
 | `C:\Softcom\ResetCaixa\Utilitarios` | Logs dos utilitários rápidos. |
-| `C:\Softcom\ResetCaixa\HopToDesk` | Instalador baixado sob demanda e subpastas com logs do HopToDesk. |
+| `C:\Softcom\ResetCaixa\SofthecomRemoto` | Instalador baixado sob demanda e subpastas com logs do Softhecom Remoto. |
 | `C:\Softcom\ResetCaixa\Scripts` | Scripts extraídos do executável durante o uso. |
 
 ## Requisitos do computador cliente
@@ -264,9 +268,9 @@ Saída principal do build:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.13.3**, utilize somente o executável da saída acima, com o nome estável `ResetadorDePdvV2.exe`.
+Para distribuir a versão **2.13.4**, utilize somente o executável da saída acima, com o nome estável `ResetadorDePdvV2.exe`.
 
-Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do HopToDesk utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
+Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do Softhecom Remoto utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
 
 ## Versionamento e distribuição
 
@@ -274,13 +278,13 @@ A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAu
 
 | Item | Padrão |
 | --- | --- |
-| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.3`. |
+| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.4`. |
 | MAJOR | Mudança incompatível que exige orientação de migração. |
 | MINOR | Nova automação ou funcionalidade compatível. |
 | PATCH | Correção ou manutenção compatível, sem nova automação. |
-| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.3.0` neste release. |
-| User-Agent | `SoftcomSupportAutomation/2.13.3`, calculado pela aplicação. |
-| Tag Git | `v2.13.3`, apontando para o commit que foi compilado e validado. |
+| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.4.0` neste release. |
+| User-Agent | `SoftcomSupportAutomation/2.13.4`, calculado pela aplicação. |
+| Tag Git | `v2.13.4`, apontando para o commit que foi compilado e validado. |
 | Arquivo para o cliente | `ResetadorDePdvV2.exe`, anexado ao GitHub Release correspondente. |
 
 Para uma nova versão:
@@ -302,7 +306,9 @@ O primeiro testa o EXE sozinho, recursos, ZIP/RAR, download/retry, cancelamento,
 
 `bin/`, `obj/`, PDBs, logs e estado local do Visual Studio ficam fora do Git. A limpeza retirou esses artefatos apenas do índice e preservou os arquivos desta máquina; não reescreveu o histórico antigo. Os executáveis de distribuição devem ser publicados em [GitHub Releases](https://github.com/vinnivii/CopiadorPdv/releases), sem exigir DLLs, configuração ou instalação da própria Central.
 
-Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.3](docs/VALIDACAO-v2.13.3.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
+O teste de EXE isolado também verifica os perfis personalizado/legado do remoto e usa janelas WinForms artificiais para validar o aviso Avalonia e o isolamento por PID. Os hosts de teste são compilados em uma pasta temporária e encerrados ao terminar; não executam o PDV nem instalam serviços reais.
+
+Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.4](docs/VALIDACAO-v2.13.4.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
 
 ## Observações de segurança
 

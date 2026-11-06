@@ -10,7 +10,7 @@
     <Company>Marcus Silva - Teresina</Company>
     <Authors>Marcus Silva - Teresina</Authors>
     <Copyright>by Marcus Silva - Teresina</Copyright>
-    <Version>2.13.3</Version>
+    <Version>2.13.4</Version>
     <LangVersion>latest</LangVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>

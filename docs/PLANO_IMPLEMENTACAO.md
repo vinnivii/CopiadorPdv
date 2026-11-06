@@ -1,5 +1,7 @@
 # Avaliação do relatório e plano de implementação
 
+Atualização de 06/11/2026: v2.13.4 implementa Softhecom Remoto via GitHub Releases, reconhecimento do perfil personalizado e fechamento do aviso Avalonia no processo iniciado pela Central. Entrega em novo PR, sem merge ou publicação da Central. Evidências em [VALIDACAO-v2.13.4.md](VALIDACAO-v2.13.4.md); a avaliação histórica abaixo permanece referente à sua base original.
+
 Data: 05/11/2026. Base avaliada: `a4564e8` (v2.13.2). Implementação dos itens 1 a 9: v2.13.3, em PR.
 
 ## Avaliação

@@ -90,6 +90,7 @@ namespace SoftcomSupportAutomation
         private volatile bool closeWhenStopped;
         private int cacheBackupDialogClosed;
         private int rpcUnavailableDialogClosed;
+        private int avaloniaDialogClosed;
         private volatile int activeSoftshopProcessId;
         private int screenshotNumber;
         private bool updateDllsRequested;
@@ -1218,6 +1219,7 @@ namespace SoftcomSupportAutomation
                 workflowRunning = true;
                 cacheBackupDialogClosed = 0;
                 rpcUnavailableDialogClosed = 0;
+                avaloniaDialogClosed = 0;
                 dialogWatcher = new Thread(WatchAndDismissKnownSoftshopDialogs) { IsBackground = true };
                 dialogWatcher.SetApartmentState(ApartmentState.STA);
                 dialogWatcher.Start();
@@ -1378,13 +1380,8 @@ namespace SoftcomSupportAutomation
                 throw new FileNotFoundException("Softshop.exe não encontrado no caminho identificado.", installedExecutable);
 
             WriteLog("Abrindo Softshop Caixa.");
-            activeSoftshopProcessId = 0;
             ThrowIfCancellationRequested();
-            Process.Start(new ProcessStartInfo(installedExecutable)
-            {
-                WorkingDirectory = Path.GetDirectoryName(installedExecutable),
-                UseShellExecute = true
-            });
+            StartSoftshopForConfiguration(installedExecutable);
             AutomationElement appWindow = WaitForSoftshopWindow(45);
             if (appWindow == null) throw new InvalidOperationException("A janela de login do Softshop não apareceu em 45 segundos.");
             activeSoftshopProcessId = appWindow.Current.ProcessId;
@@ -1402,6 +1399,26 @@ namespace SoftcomSupportAutomation
             WriteLog("Captura das abas finalizada.");
         }
 
+        private void StartSoftshopForConfiguration(string executable)
+        {
+            ThrowIfCancellationRequested();
+            activeSoftshopProcessId = 0;
+            var version = FileVersionInfo.GetVersionInfo(executable);
+            WriteLog("PDV aberto: versão de arquivo " + (version.FileVersion ?? "não informada") +
+                ", versão do produto " + (version.ProductVersion ?? "não informada") + ", caminho " + executable + ".");
+            ThrowIfCancellationRequested();
+            using (Process process = Process.Start(new ProcessStartInfo(executable)
+            {
+                WorkingDirectory = Path.GetDirectoryName(executable),
+                UseShellExecute = true
+            }))
+            {
+                if (process == null) throw new InvalidOperationException("Não foi possível iniciar o Softshop Caixa.");
+                activeSoftshopProcessId = process.Id;
+                WriteLog("Softshop iniciado pela Central. PID: " + activeSoftshopProcessId + ".");
+            }
+        }
+
         private AutomationElement WaitForSoftshopWindow(int timeoutSeconds)
         {
             return WaitForWindow(timeoutSeconds, element =>
@@ -1409,7 +1426,10 @@ namespace SoftcomSupportAutomation
                 int processId = element.Current.ProcessId;
                 try
                 {
+                    if (!element.Current.IsEnabled || element.Current.IsOffscreen ||
+                        (activeSoftshopProcessId > 0 && processId != activeSoftshopProcessId)) return false;
                     if (!Process.GetProcessById(processId).ProcessName.Equals("softshop", StringComparison.OrdinalIgnoreCase)) return false;
+                    if (FindAvaloniaOkButton(element) != null) return false;
                     return IsLoginWindow(element);
                 }
                 catch { return false; }
@@ -2670,12 +2690,7 @@ namespace SoftcomSupportAutomation
 
             WriteLog("Nova instalação localizada em: " + installedExecutable);
             ThrowIfCancellationRequested();
-            activeSoftshopProcessId = 0;
-            Process.Start(new ProcessStartInfo(installedExecutable)
-            {
-                WorkingDirectory = Path.GetDirectoryName(installedExecutable),
-                UseShellExecute = true
-            });
+            StartSoftshopForConfiguration(installedExecutable);
             AutomationElement appWindow = WaitForSoftshopWindow(120);
             if (appWindow == null) throw new InvalidOperationException("A tela de senha da nova instalação não apareceu.");
             activeSoftshopProcessId = appWindow.Current.ProcessId;
@@ -2839,11 +2854,47 @@ namespace SoftcomSupportAutomation
                 if (DismissCacheBackupDialog() && Interlocked.Exchange(ref cacheBackupDialogClosed, 1) == 0)
                     WriteLog("Aviso de backup de cache fechado automaticamente.");
                 int processId = activeSoftshopProcessId;
+                if (processId > 0 && DismissAvaloniaDialog(processId) &&
+                    Interlocked.Exchange(ref avaloniaDialogClosed, 1) == 0)
+                    WriteLog("Aviso de inicialização com 'Avalonia' fechado automaticamente pelo botão OK.");
                 if (processId > 0 && DismissRpcUnavailableDialog(processId) &&
                     Interlocked.Exchange(ref rpcUnavailableDialogClosed, 1) == 0)
                     WriteLog("Aviso 'O servidor RPC não está disponível' fechado automaticamente.");
                 Thread.Sleep(250);
             }
+        }
+
+        private bool DismissAvaloniaDialog(int softshopProcessId)
+        {
+            if (stopRequested || softshopProcessId <= 0) return false;
+            try
+            {
+                foreach (AutomationElement window in AutomationElement.RootElement.FindAll(TreeScope.Children,
+                    new PropertyCondition(AutomationElement.ProcessIdProperty, softshopProcessId)))
+                {
+                    if (!window.Current.IsEnabled) continue;
+                    AutomationElement okButton = FindAvaloniaOkButton(window);
+                    if (okButton != null && okButton.Current.IsEnabled && !stopRequested) return InvokeDialogButton(window, okButton);
+                }
+            }
+            catch { } // Uma janela fechada ou um provedor UIA indisponível não pode encerrar o monitor.
+            return false;
+        }
+
+        private static AutomationElement FindAvaloniaOkButton(AutomationElement window)
+        {
+            if (window.Current.ControlType != ControlType.Window || window.Current.IsOffscreen) return null;
+            var children = window.FindAll(TreeScope.Descendants, Condition.TrueCondition)
+                .Cast<AutomationElement>().Where(element => !element.Current.IsOffscreen).ToArray();
+            bool avalonia = IsAvaloniaMessage(window.Current.Name) || children.Any(element =>
+                element.Current.ControlType == ControlType.Text && IsAvaloniaMessage(element.Current.Name));
+            return avalonia ? children.FirstOrDefault(element => element.Current.ControlType == ControlType.Button &&
+                NormalizeName(element.Current.Name) == "ok") : null;
+        }
+
+        private static bool IsAvaloniaMessage(string text)
+        {
+            return !string.IsNullOrEmpty(text) && text.IndexOf("Avalonia", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool DismissRpcUnavailableDialog(int softshopProcessId)
