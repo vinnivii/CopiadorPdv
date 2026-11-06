@@ -31,11 +31,12 @@ public class WorkflowProbe
     private string runFolder, logFile;
     private string selectedPdvVersionName = "test-version";
     private volatile bool workflowRunning, stopRequested;
-    private int activeSoftshopProcessId, cacheBackupDialogClosed, rpcUnavailableDialogClosed;
+    private int activeSoftshopProcessId, cacheBackupDialogClosed, rpcUnavailableDialogClosed, avaloniaDialogClosed;
     private readonly ManualResetEventSlim packageStarted = new ManualResetEventSlim();
     private readonly ManualResetEventSlim packageMayFinish = new ManualResetEventSlim();
     private readonly List<string> steps = new List<string>();
-    private bool failPackage, cancelCapture, cancelDlls, ready;
+    private bool failPackage, cancelCapture, cancelDlls, failCapture, ready;
+    private bool packageCancelled;
 
     // O metodo de producao e inserido integralmente pelo script, sem reescrever suas ramificacoes.
     __RUN_WORKFLOW__
@@ -49,7 +50,8 @@ public class WorkflowProbe
     {
         Record("prepare"); packageStarted.Set();
         if (failPackage) throw new InvalidDataException("Injected package failure");
-        packageMayFinish.Wait(token);
+        try { packageMayFinish.Wait(token); }
+        catch (OperationCanceledException) { packageCancelled = true; Record("package-cancelled"); throw; }
         ready = true;
         Record("ready");
         return "prepared.msi";
@@ -66,7 +68,9 @@ public class WorkflowProbe
     }
     private void CaptureConfigurationTabs(string executable)
     {
-        Record("capture"); packageMayFinish.Set();
+        Record("capture");
+        if(failCapture) throw new InvalidOperationException("Injected login failure");
+        packageMayFinish.Set();
         if(cancelCapture) stopRequested = true;
     }
     private string WaitForPreparedPdvPackage(Task<string> task, string waiting, string failure)
@@ -100,10 +104,10 @@ public class WorkflowProbe
         if(!condition) throw new Exception("FAIL: " + message);
         Console.WriteLine("PASS: " + message);
     }
-    private static WorkflowProbe Run(PdvAutomationMode mode, bool dlls, bool fail = false, bool cancel = false, bool cancelDlls = false)
+    private static WorkflowProbe Run(PdvAutomationMode mode, bool dlls, bool fail = false, bool cancel = false, bool cancelDlls = false, bool failCapture = false)
     {
         var probe = new WorkflowProbe { selectedPdvAutomationMode = mode, updateDllsRequested = dlls,
-            failPackage = fail, cancelCapture = cancel, cancelDlls = cancelDlls };
+            failPackage = fail, cancelCapture = cancel, cancelDlls = cancelDlls, failCapture = failCapture };
         probe.RunWorkflow();
         Console.WriteLine("TRACE: " + mode + ", dlls=" + dlls + ": " + string.Join(" -> ", probe.steps));
         return probe;
@@ -129,5 +133,10 @@ public class WorkflowProbe
         Require(cancellation.steps.Contains("cancelled") && !cancellation.steps.Contains("uninstall") && !cancellation.steps.Contains("install") && cancellation.steps.Last() == "finished", "Cancelamento na captura impede desinstalacao/instalacao e encerra workflow");
         var dllCancellation = Run(PdvAutomationMode.CleanReinstall, true, false, false, true);
         Require(dllCancellation.steps.Contains("cancelled") && !dllCancellation.steps.Contains("install") && dllCancellation.steps.Last() == "finished", "Cancelamento durante DLLs na Reinstalacao Limpa impede instalar PDV");
+        var captureFailure = Run(PdvAutomationMode.FullReset, true, failCapture: true);
+        Require(captureFailure.packageCancelled && captureFailure.steps.Contains("error") &&
+            !captureFailure.steps.Contains("uninstall") && !captureFailure.steps.Contains("install") &&
+            !captureFailure.steps.Contains("preserve+localappdata") && captureFailure.steps.Last() == "finished",
+            "Falha na captura cancela preparacao paralela e preserva instalacao e LocalAppData");
     }
 }

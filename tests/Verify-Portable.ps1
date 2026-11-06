@@ -58,6 +58,15 @@ try {
     Write-Output 'PASS: EXE isolado, metadados/UI/User-Agent, recursos, ZIP, RAR e cancelamento de extracao.'
     Add-Type -Path (Join-Path $PSScriptRoot 'DownloadTests.cs') -ReferencedAssemblies System,System.Core,System.Windows.Forms
     [DownloadTests]::Run($form,$dataRoot)
+    Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
+    $fixtureExe = Join-Path $dataRoot 'Softshop.exe'
+    Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\DialogHost.cs') -OutputAssembly $fixtureExe -OutputType WindowsApplication -ReferencedAssemblies System,System.Windows.Forms,System.Drawing
+    $automationReferences = @('System','System.Core','System.Windows.Forms',
+        [Windows.Automation.AutomationElement].Assembly.Location,
+        [Windows.Automation.ControlType].Assembly.Location,
+        [Windows.Rect].Assembly.Location)
+    Add-Type -Path (Join-Path $PSScriptRoot 'AutomationTests.cs') -ReferencedAssemblies $automationReferences
+    [AutomationTests]::Run($form,$dataRoot,$fixtureExe)
     [Windows.Forms.Application]::DoEvents()
     Write-Output 'LIMITACAO: nenhum instalador, senha ou servico real foi alterado; homologacao de cliente continua separada.'
     Write-Output ('Resultados locais: '+$testRoot)

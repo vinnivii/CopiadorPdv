@@ -22,13 +22,13 @@ namespace SoftcomSupportAutomation
             ApplyPanelBorder(card);
             card.Controls.Add(new Label
             {
-                Location = new Point(12, 8), Size = new Size(328, 20), Text = "HopToDesk",
+                Location = new Point(12, 8), Size = new Size(328, 20), Text = RemoteDisplayName,
                 ForeColor = TextPrimary, Font = new Font(Font.FontFamily, 9, FontStyle.Bold)
             });
             card.Controls.Add(new Label
             {
                 Location = new Point(12, 30), Size = new Size(328, 34), ForeColor = TextSecondary,
-                Text = "Instala o HopToDesk silenciosamente para acesso remoto aos clientes."
+                Text = "Instala o Softhecom Remoto silenciosamente para acesso remoto aos clientes."
             });
             configureHopToDeskPasswordCheckBox.Text = "Configurar senha permanente";
             configureHopToDeskPasswordCheckBox.Location = new Point(12, 68);
@@ -69,7 +69,7 @@ namespace SoftcomSupportAutomation
                 Location = new Point(12, 156), Size = new Size(328, 34), ForeColor = TextMuted,
                 Text = "O Windows pode expor a senha na linha de comando durante a configuração."
             });
-            hopToDeskButton.Text = "Instalar HopToDesk";
+            hopToDeskButton.Text = "Instalar Softhecom Remoto";
             hopToDeskButton.Location = new Point(12, 196);
             hopToDeskButton.Size = new Size(328, 28);
             StyleActionButton(hopToDeskButton, Color.FromArgb(55, 55, 55));
@@ -104,7 +104,7 @@ namespace SoftcomSupportAutomation
                 throw new InvalidOperationException("Preencha a senha permanente ou desmarque Configurar senha permanente antes de iniciar.");
             // Limite de persistência do próprio HopToDesk (ENCRYPT_MAX_LEN, em bytes UTF-8).
             if (Encoding.UTF8.GetByteCount(value) > 128 || value.IndexOfAny(new[] { '\0', '\r', '\n' }) >= 0)
-                throw new InvalidOperationException("A senha excede o limite do HopToDesk ou contém uma quebra de linha. Use até 128 bytes em UTF-8.");
+                throw new InvalidOperationException("A senha excede o limite do Softhecom Remoto ou contém uma quebra de linha. Use até 128 bytes em UTF-8.");
             return value.ToCharArray();
         }
 
@@ -113,7 +113,7 @@ namespace SoftcomSupportAutomation
             if (confirmed) return unattended
                 ? " Senha permanente configurada e acesso não supervisionado confirmado; teste a conexão de outro dispositivo."
                 : " A senha permanente foi configurada, mas o acesso não supervisionado não foi confirmado. Confira as opções no aplicativo.";
-            return started ? " A senha pode ter sido alterada, mas a configuração não foi confirmada. Confira as opções no HopToDesk antes de usar." : string.Empty;
+            return started ? " A senha pode ter sido alterada, mas a configuração não foi confirmada. Confira as opções no Softhecom Remoto antes de usar." : string.Empty;
         }
 
         private bool ConfigureHopToDeskPassword(string executable, char[] password)
@@ -124,10 +124,9 @@ namespace SoftcomSupportAutomation
                 RunHopToDeskPasswordCommand(executable, password);
                 ThrowIfCancellationRequested();
                 // Leitura somente: o próprio HopToDesk persiste sua senha nativa criptografada.
-                string serviceConfig = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                    @"ServiceProfiles\LocalService\AppData\Roaming", HopToDeskServiceName, "config");
-                string userConfig = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    HopToDeskServiceName, "config");
+                string serviceRoaming = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                    @"ServiceProfiles\LocalService\AppData\Roaming");
+                string userRoaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
                 var elapsed = Stopwatch.StartNew();
                 while (true)
                 {
@@ -135,8 +134,8 @@ namespace SoftcomSupportAutomation
                     bool present = false;
                     try
                     {
-                        present = HasHopToDeskPermanentPassword(Path.Combine(serviceConfig, "HopToDesk.toml")) &&
-                            HasHopToDeskPermanentPassword(Path.Combine(userConfig, "HopToDesk.toml"));
+                        present = HasHopToDeskPermanentPassword(GetRemoteConfigPath(serviceRoaming, RemoteAppName, "")) &&
+                            HasHopToDeskPermanentPassword(GetRemoteConfigPath(userRoaming, RemoteAppName, ""));
                     }
                     catch (IOException) { } // O aplicativo pode estar concluindo a gravação nativa.
                     if (present) break;
@@ -144,9 +143,9 @@ namespace SoftcomSupportAutomation
                     SleepWithCancellation(100);
                 }
                 WaitForHopToDeskInstallation(5000);
-                WriteLog("Comando de senha confirmado pelo HopToDesk. Senha permanente presente na configuração nativa do usuário e do serviço.");
+                WriteLog("Comando de senha confirmado pelo Softhecom Remoto. Senha permanente presente na configuração nativa do usuário e do serviço.");
                 bool unattended = false;
-                try { unattended = HopToDeskUnattendedEnabled(ReadHopToDeskAccessOptions(Path.Combine(serviceConfig, "HopToDesk2.toml"))); }
+                try { unattended = HopToDeskUnattendedEnabled(ReadHopToDeskAccessOptions(GetRemoteConfigPath(serviceRoaming, RemoteAppName, "2"))); }
                 catch (IOException) { }
                 catch (UnauthorizedAccessException) { }
                 catch (InvalidDataException) { }
@@ -160,7 +159,7 @@ namespace SoftcomSupportAutomation
             {
                 // Nunca propaga stdout, stderr ou exceções que possam incluir o segredo.
                 throw new InvalidOperationException("Não foi possível confirmar a configuração da senha permanente. " +
-                    "O HopToDesk permanece instalado. Abra o aplicativo, confira a senha e o acesso não supervisionado e teste uma conexão.");
+                    "O Softhecom Remoto permanece instalado. Abra o aplicativo, confira a senha e o acesso não supervisionado e teste uma conexão.");
             }
         }
 
