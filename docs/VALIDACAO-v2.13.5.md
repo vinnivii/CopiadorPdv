@@ -6,7 +6,7 @@ O `processo.log` fornecido registra a Central **2.13.4.0**, SHA-256 `24330d3ac22
 
 O pacote de 109.315.280 bytes foi baixado, validado por SHA-256 e extraído em **4,6 s**. A Central encontrou o campo `txtSenha` protegido e enviou F11. Não identificou as Configurações e, antes de repetir o atalho, encontrou o login indisponível/bloqueado por outra janela. A captura falhou em **26,5 s** e o atendimento terminou em **26,9 s**, antes de desinstalar, renomear pastas ou instalar.
 
-O log não identifica a janela que bloqueava o login e não registra fechamento de aviso Avalonia. Portanto, não comprova se havia Configurações abertas ou um aviso do PDV.
+O log não identifica a janela que bloqueava o login e não registra fechamento de aviso Avalonia. O técnico confirmou depois que **as Configurações estavam abertas** quando a Central parou. Isso confirma que o F11 abriu o painel, que não foi reconhecido pela Central, e é compatível com o defeito reproduzido abaixo.
 
 ## Defeito reproduzido e correção
 
@@ -41,6 +41,6 @@ No build local, origem e cópia têm **1.999.872 bytes** e SHA-256 `662f9081bf96
 
 ## Limites
 
-Os testes de janela são fixtures. Não foi reproduzida a ocorrência real no PDV 8.37.3.0 do cliente nem executado Reset, F11/captura ou instalação real nesta revisão. A correção resolve o defeito reproduzível de localização de janelas; não confirma qual janela estava aberta naquela máquina. Um aviso desconhecido ou uma falha persistente do PDV continua interrompendo a captura com a instalação atual preservada.
+Os testes de janela são fixtures. Não foi repetido o atendimento real no PDV 8.37.3.0 do cliente nem executado Reset, F11/captura ou instalação real nesta revisão. A correção resolve o defeito reproduzível de localização de janelas e o técnico confirmou o painel aberto na ocorrência; a hierarquia UIA daquela máquina ainda não foi inspecionada. Um aviso desconhecido ou uma falha persistente do PDV continua interrompendo a captura com a instalação atual preservada.
 
 Nenhuma release/tag foi publicada nesta correção. As releases históricas e o instalador do Softhecom Remoto permanecem inalterados. As exclusões locais anteriores de `VALIDACAO-v2.13.0.md` e `VALIDACAO-v2.13.1.md` ficam fora do commit.
