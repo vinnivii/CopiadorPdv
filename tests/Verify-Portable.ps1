@@ -67,6 +67,10 @@ try {
     Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\InstallerHost.cs') -OutputAssembly $installerFixtureExe -OutputType ConsoleApplication -ReferencedAssemblies System
     Add-Type -Path (Join-Path $PSScriptRoot 'InstallerTests.cs') -ReferencedAssemblies System,System.Core
     [InstallerTests]::Run($form,$dataRoot,$installerFixtureExe)
+    $remoteFixtureExe = Join-Path $dataRoot 'RemoteHost.exe'
+    Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\RemoteHost.cs') -OutputAssembly $remoteFixtureExe -OutputType WindowsApplication -ReferencedAssemblies System,System.Windows.Forms,System.Drawing
+    Add-Type -Path (Join-Path $PSScriptRoot 'RemoteTests.cs') -ReferencedAssemblies System,System.Core
+    [RemoteTests]::Run($form,$dataRoot,$remoteFixtureExe)
     Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
     $fixtureExe = Join-Path $dataRoot 'Softshop.exe'
     Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\DialogHost.cs') -OutputAssembly $fixtureExe -OutputType WindowsApplication -ReferencedAssemblies System,System.Windows.Forms,System.Drawing

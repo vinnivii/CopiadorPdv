@@ -13,3 +13,5 @@ A licença original está em `LICENSE.SharpCompress.txt`. É uma fixture de font
 ## Hosts de teste
 
 `DialogHost.cs` cria janelas artificiais para UI Automation. `InstallerHost.cs` apenas retorna o código solicitado ou grava seu PID e aguarda; não chama Windows Installer, instala produtos ou altera serviços/registro. Ambos são compilados em uma pasta temporária pelo teste de EXE isolado. Os processos são encerrados ao final dos cenários.
+
+`RemoteHost.cs` simula a janela e o comando de senha do remoto. Usa somente valores sintéticos, inclusive uma saída adversarial que deve ser descartada pela Central; não configura senha real nem instala serviço. Também é compilado e encerrado na pasta temporária dos testes.

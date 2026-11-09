@@ -16,13 +16,13 @@ namespace SoftcomSupportAutomation
     internal sealed partial class SupportForm
     {
         private const string RemoteDisplayName = "Softhecom Remoto";
-        private const string RemoteAppName = "SofthecomRemoto";
+        private const string RemoteAppName = RemoteDisplayName;
         // Arquivo original assinado, gerado pelo Client Builder oficial do HopToDesk.
         private const string HopToDeskDownloadUrl = "https://github.com/vinnivii/CopiadorPdv/releases/download/softhecom-remoto-v1.46.80/softhecomremoto-install.exe";
         private const string HopToDeskPublisher = "Begonia Holdings LLC";
         private const string HopToDeskFolder = @"C:\Softcom\ResetCaixa\SofthecomRemoto";
         private const string HopToDeskServiceName = RemoteAppName;
-        private static readonly string[] RemoteAppNames = { RemoteAppName, "HopToDesk" };
+        private static readonly string[] RemoteAppNames = { RemoteAppName, "SofthecomRemoto", "HopToDesk" };
 
         private void HopToDeskButton_Click(object sender, EventArgs e)
         {
@@ -69,6 +69,7 @@ namespace SoftcomSupportAutomation
             bool passwordConfigurationStarted = false;
             bool passwordConfigured = false;
             bool unattendedConfirmed = false;
+            string passwordFailure = null;
             string stage = "detecção da instalação";
             try
             {
@@ -77,6 +78,7 @@ namespace SoftcomSupportAutomation
                 logFile = Path.Combine(runFolder, "processo.log");
                 File.WriteAllText(logFile, string.Empty, new UTF8Encoding(true));
                 WriteLog("Início: instalação do Softhecom Remoto. Privilégio administrativo confirmado.");
+                WriteLog("Central em execução: versão " + ApplicationVersion + ".");
                 ThrowIfCancellationRequested();
                 string[] candidates = GetHopToDeskExecutableCandidates(out existingInstallation);
                 foreach (string candidate in candidates.Where(File.Exists))
@@ -145,6 +147,11 @@ namespace SoftcomSupportAutomation
                         unattendedConfirmed = ConfigureHopToDeskPassword(installedExecutable, password);
                         passwordConfigured = true;
                     }
+                    catch (InvalidOperationException ex)
+                    {
+                        passwordFailure = ex.Message;
+                        WriteLog("ATENÇÃO: " + passwordFailure + " A janela será aberta para conferência do ID.");
+                    }
                     finally
                     {
                         Array.Clear(password, 0, password.Length);
@@ -154,15 +161,12 @@ namespace SoftcomSupportAutomation
                 else WriteLog("Configuração de senha permanente não selecionada. Senhas e opções de acesso mantidas.");
                 ThrowIfCancellationRequested();
                 stage = "abertura do aplicativo";
-                using (Process application = Process.Start(new ProcessStartInfo(installedExecutable)
+                OpenHopToDeskApplication(installedExecutable, 15000);
+                if (passwordFailure != null)
                 {
-                    WorkingDirectory = Path.GetDirectoryName(installedExecutable),
-                    UseShellExecute = true
-                }))
-                {
-                    if (application == null) throw new InvalidOperationException("Não foi possível abrir o Softhecom Remoto.");
+                    stage = "configuração e verificação da senha permanente";
+                    throw new InvalidOperationException(passwordFailure);
                 }
-                WriteLog("Softhecom Remoto aberto para consulta do ID e teste de conexão.");
                 ShowFinal("Softhecom Remoto instalado e serviço em execução.\r\n" +
                     (passwordConfigured ? unattendedConfirmed
                         ? "Senha permanente configurada e acesso não supervisionado confirmado.\r\n"
@@ -196,6 +200,49 @@ namespace SoftcomSupportAutomation
                 DeleteHopToDeskDownload(installerPath);
                 FinishAutomation();
             }
+        }
+
+        private void OpenHopToDeskApplication(string executable, int timeoutMilliseconds)
+        {
+            ThrowIfCancellationRequested();
+            using (Process application = Process.Start(new ProcessStartInfo(executable)
+            {
+                WorkingDirectory = Path.GetDirectoryName(executable),
+                UseShellExecute = true
+            }))
+            {
+                if (application == null) throw new InvalidOperationException("Não foi possível abrir o Softhecom Remoto.");
+            }
+            int sessionId;
+            using (var current = Process.GetCurrentProcess()) sessionId = current.SessionId;
+            var elapsed = Stopwatch.StartNew();
+            while (elapsed.ElapsedMilliseconds < timeoutMilliseconds)
+            {
+                ThrowIfCancellationRequested();
+                // O processo de lançamento pode sair após encaminhar a abertura à instância da bandeja.
+                foreach (Process process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable)))
+                using (process)
+                {
+                    try
+                    {
+                        if (process.SessionId != sessionId ||
+                            !string.Equals(process.MainModule.FileName, executable, StringComparison.OrdinalIgnoreCase) ||
+                            !string.Equals(process.MainWindowTitle, RemoteDisplayName, StringComparison.OrdinalIgnoreCase)) continue;
+                        IntPtr window = process.MainWindowHandle;
+                        if (window == IntPtr.Zero) continue;
+                        ShowWindow(window, 9);
+                        BringWindowToTop(window);
+                        SetForegroundWindow(window);
+                        WriteLog("Janela do Softhecom Remoto aberta para consulta do ID e teste de conexão.");
+                        return;
+                    }
+                    catch (InvalidOperationException) { }
+                    catch (System.ComponentModel.Win32Exception) { }
+                }
+                SleepWithCancellation(100);
+            }
+            throw new InvalidOperationException("O Softhecom Remoto está instalado e seu processo foi iniciado, mas a janela principal não apareceu. " +
+                "Abra-o pelo menu Iniciar para conferir o ID; o serviço não foi encerrado.");
         }
 
         private static string GetHopToDeskInstallationState(bool existed, bool started, bool confirmed)
@@ -277,7 +324,7 @@ namespace SoftcomSupportAutomation
 
         private static string GetRemoteAppName(string displayName)
         {
-            string name = (displayName ?? string.Empty).Replace(" ", string.Empty);
+            string name = (displayName ?? string.Empty).Trim();
             return RemoteAppNames.FirstOrDefault(appName => string.Equals(appName, name, StringComparison.OrdinalIgnoreCase));
         }
 

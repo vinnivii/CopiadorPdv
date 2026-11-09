@@ -43,10 +43,41 @@ Os fluxos simulados usam o método de produção inserido no probe e conferem os
 
 Também são executados EXE isolado, metadados/UI/User-Agent derivados, quatro scripts incorporados, ZIP/RAR, download de 10 MiB em blocos, retry de rede seletivo/limite de três tentativas, transferência truncada, timeout/cancelamento, perfis do remoto, janelas Avalonia/modais e distribuição Unicode com apenas o EXE e SHA-256 idêntico ao build.
 
-Resultados locais: **build Release com zero erros e três avisos MSB3277 preexistentes**, portabilidade/instalador, fluxos simulados e distribuição aprovados. EXE de **2.003.456 bytes**, FileVersion/AssemblyVersion **2.13.6.0**; SHA-256 origem/cópia `eebf05e488b931e10569b579f753c4c78d8997a502dfe652754694d9bc0991d3`. O download de 10 MiB em 160 blocos levou **1.750 ms**, os cancelamentos de rede responderam em **2–95 ms** após o sinal e o timeout de leitura de teste de 200 ms encerrou em **212 ms**. O CI confere os hashes de seu próprio build, sem exigir identidade entre revisões/ambientes diferentes.
+Resultados locais da primeira revisão (PDV): **build Release com zero erros e três avisos MSB3277 preexistentes**, portabilidade/instalador, fluxos simulados e distribuição aprovados. EXE de **2.003.456 bytes**, FileVersion/AssemblyVersion **2.13.6.0**; SHA-256 origem/cópia `eebf05e488b931e10569b579f753c4c78d8997a502dfe652754694d9bc0991d3`. O download de 10 MiB em 160 blocos levou **1.750 ms**, os cancelamentos de rede responderam em **2–95 ms** após o sinal e o timeout de leitura de teste de 200 ms encerrou em **212 ms**. O CI confere os hashes de seu próprio build, sem exigir identidade entre revisões/ambientes diferentes.
+
+## Revisão complementar — Softhecom Remoto
+
+O novo log registra download em 1,4 s, assinatura válida e instalação com código 0, seguidos de timeout de 30 s na confirmação do serviço. Essa exceção ocorria antes do comando de senha e da abertura do aplicativo.
+
+Na instalação real 1.46.80 disponível nesta máquina, o serviço se chama **`Softhecom Remoto`**, a pasta/executável são **`Program Files (x86)\Softhecom Remoto\Softhecom Remoto.exe`**, e os arquivos nativos usam **`Softhecom Remoto\config\Softhecom Remoto.toml`** e **`Softhecom Remoto2.toml`**, tanto no AppData do usuário quanto no perfil LocalService. O ProductName do executável é `SofthecomRemoto`, mas esse metadado não é o nome do serviço ou dos arquivos. A Central usava esse nome sem espaços em todos esses locais, causando a confirmação falsa de falha.
+
+- A identidade nativa passa a usar `Softhecom Remoto`, com espaço. Os aliases `SofthecomRemoto` e `HopToDesk` continuam reconhecidos para detecção anterior, sem aceitá-los como prova de sucesso da variante recém-instalada.
+- A senha continua opcional, via comando oficial `--password`, usando os caminhos nativos corretos para verificar a presença da configuração criptografada. A Central não salva a senha nem a reutiliza em outra execução.
+- A abertura agora aguarda a janela principal do executável esperado na sessão interativa atual. Aceita encaminhamento à instância já existente na bandeja e tenta restaurar/trazer a janela para frente, sem confundir uma conexão remota de outro título com a tela do ID.
+- Se a senha não puder ser confirmada, o valor temporário é descartado e o aplicativo ainda é aberto para conferência; a falha continua sendo informada, sem anunciar senha configurada.
+- Conforme a [ajuda oficial](https://help.hoptodesk.com/help), a senha permanente é distinta da senha temporária exibida na tela. `--password` continua exigindo argumento inspecionável temporariamente no Windows; a Central descarta stdout/stderr e não registra argumentos. Não foi implementado arquivo de senha/configuração ou protocolo IPC alternativo.
+
+As fixtures acrescentam três perfis/seis caminhos de instalação em 32/64 bits, ImagePath com espaços/aspas, paths TOML com espaço, argumento Unicode com aspas/barras/metacaracteres, confirmação `Done!`, rejeição de código zero sem confirmação, descarte de stdout/stderr que ecoam um segredo sintético e cancelamento do comando. Testam janela correta, título incorreto, encaminhamento à instância existente e cancelamento da espera.
+
+**Verificação real separada dos testes simulados:** o método de produção confirmou o serviço instalado e seu executável em **37 ms**. A abertura/reutilização da janela principal já em execução levou **34 ms**, com janela visível confirmada por UI Automation. Não foram lidos controles de senha, alterada autenticação, reinstalado o produto ou encerradas sessões remotas. O teste não mede abertura fria nem comprova conexão de outro dispositivo.
+
+Build complementar local: **zero erros e os mesmos três avisos**, EXE único de **2.004.992 bytes**, versão **2.13.6.0**, SHA-256 origem/cópia `c3188a40d129c1d8c7ffb0da66b8de75ce88c580a668e5fce19b95a05b5a4ce3`. As correções do PDV desta PR permanecem preservadas.
+
+### Reinstalação real autorizada pelo responsável
+
+Em seguida, o responsável autorizou desinstalar/reinstalar nesta máquina e usar uma senha aleatória temporária, removendo-a ao final. O instalador original foi baixado e validado por SHA-256/assinatura antes da remoção, para garantir disponibilidade da reinstalação.
+
+- O comando oficial `--uninstall` retornou 1; sua conclusão foi verificada pelo estado efetivo: serviço, executável e registro de desinstalação ausentes. A configuração do usuário permaneceu disponível. Esse retorno não foi acrescentado aos códigos de sucesso da Central.
+- Reinstalação pelos métodos de produção: **código 0 em 7.471 ms**, serviço confirmado em **3 ms** e janela principal aberta em **773 ms**. Os arquivos nativos do usuário e de LocalService ficaram disponíveis.
+- O comando oficial com argumento vazio foi primeiro confirmado como operação válida para limpeza, mantendo o estado inicial sem senha permanente.
+- Uma senha aleatória criptograficamente gerada em memória foi aplicada pelo método `ConfigureHopToDeskPassword`: **confirmação em 203 ms**, incluindo marcador de sucesso e presença da senha nativa nos dois perfis.
+- No `finally` do teste, o comando oficial removeu a senha temporária. Sua ausência foi verificada no usuário e no serviço; os buffers foram zerados. Nenhuma senha de teste foi exibida ou salva pela Central, pelo script de teste ou pelos relatórios. A exposição temporária dos argumentos a ferramentas do Windows continua documentada.
+- O aplicativo permaneceu reinstalado, serviço em execução e janela aberta ao terminar. A opção de acesso não supervisionado **não foi confirmada** pela verificação existente; políticas de aprovação/SSO/acesso não foram modificadas. Não foi testada conexão de outro dispositivo ou reinício.
 
 ## Limites
 
 Não foi repetida a instalação real na máquina do cliente. Os retornos MSI são simulados; não foi identificado qual transação gerou o 1618 original. Um Windows Installer permanentemente ocupado ainda precisa ser resolvido no Windows pelo técnico, após o timeout informado. O paralelismo reduz espera quando os pacotes ficam prontos durante a captura, sem garantir uma velocidade específica em cada rede.
 
-Esta correção não publica tag/release nem integra a PR automaticamente. Releases históricas, Softhecom Remoto e exclusões locais anteriores permanecem fora destas alterações.
+O teste da senha temporária comprovou aplicação e remoção pelo comando oficial e pelas configurações nativas. Não comprova conexão remota/reinício ou todas as políticas de acesso. Para uso, o técnico deve informar sua própria senha no campo da Central, sem enviá-la pelo chat; a senha temporária do teste não é reutilizada.
+
+Esta correção não publica tag/release nem integra a PR automaticamente. Releases históricas, o asset original do instalador remoto e exclusões locais anteriores permanecem fora destas alterações.
