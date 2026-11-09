@@ -55,7 +55,7 @@ public static class AutomationTests
 
         var dismiss = type.GetMethod("DismissAvaloniaDialog", Instances);
         var stop = type.GetField("stopRequested", Instances);
-        foreach (string scenario in new[] { "launch", "normal", "mixed", "title", "edit", "unrelated", "no-ok", "disabled", "hidden", "other-process", "cancel" })
+        foreach (string scenario in new[] { "launch", "login", "normal", "mixed", "title", "edit", "unrelated", "no-ok", "disabled", "hidden", "other-process", "cancel" })
         {
             string marker = scenario == "launch" ? Path.ChangeExtension(fixtureExe, ".clicked") : Path.Combine(folder, "dialog-" + scenario + ".txt");
             Process fixture;
@@ -83,6 +83,16 @@ public static class AutomationTests
                         Thread.Sleep(25);
                     }
                     Check(window != null, "Janela de teste disponivel: " + scenario);
+                    if (scenario == "login")
+                    {
+                        var activePid = type.GetField("activeSoftshopProcessId", Instances);
+                        activePid.SetValue(form, process.Id);
+                        var login = (AutomationElement)type.GetMethod("WaitForSoftshopWindow", Instances).Invoke(form, new object[] { 1 });
+                        Check(login != null && login.Current.ProcessId == process.Id, "Login associado ao PID iniciado");
+                        activePid.SetValue(form, Process.GetCurrentProcess().Id);
+                        Check(type.GetMethod("WaitForSoftshopWindow", Instances).Invoke(form, new object[] { 1 }) == null,
+                            "Janela de outro PID nao e aceita como login");
+                    }
                     if (scenario == "edit")
                     {
                         type.GetField("activeSoftshopProcessId", Instances).SetValue(form, process.Id);

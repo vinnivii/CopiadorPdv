@@ -262,13 +262,21 @@ No computador de desenvolvimento, é necessário ter o .NET SDK e acesso ao NuGe
 dotnet build .\SoftcomSupportAutomation\SoftcomSupportAutomation.csproj -c Release
 ```
 
-Saída principal do build:
+Saída interna do build (assembly preservada):
 
 ```text
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
-Para distribuir a versão **2.13.4**, utilize somente o executável da saída acima, com o nome estável `ResetadorDePdvV2.exe`.
+Para compilar e gerar automaticamente a cópia de distribuição:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Distribution.ps1
+```
+
+Se o build já foi executado e validado, use `-SkipBuild`. O script lê `<Version>` do projeto, confere os metadados e gera somente **`dist\CentralAutomação(2.13.4).exe`** nesta versão. O formato obrigatório é `CentralAutomação(MAJOR.MINOR.PATCH).exe`, com acentos e parênteses e sem `v`. O SHA-256 deve ser idêntico ao da saída interna. A cópia não altera nome da assembly, versão ou conteúdo do executável.
+
+O script remove apenas cópias anteriores com esse mesmo padrão em `dist/`. Arquivos ou diretórios desconhecidos bloqueiam a preparação sem serem apagados. A pasta final deve conter somente o EXE, sem DLLs, PDBs ou `.config`. Os scripts PowerShell com nomes Unicode usam UTF-8 com BOM para compatibilidade com Windows PowerShell 5.1.
 
 Graças ao Costura.Fody, as dependências gerenciadas são incorporadas ao executável, assim como os scripts existentes. No cliente, copie somente o executável, sem DLLs ou arquivos de configuração ao lado dele. A Central permanece portátil, sem instalação própria; o .NET Framework 4.8 continua sendo um requisito do Windows. O controle de serviços do Softhecom Remoto utiliza `System.ServiceProcess`, já disponível no framework, sem novo pacote NuGet.
 
@@ -285,26 +293,27 @@ A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAu
 | AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.4.0` neste release. |
 | User-Agent | `SoftcomSupportAutomation/2.13.4`, calculado pela aplicação. |
 | Tag Git | `v2.13.4`, apontando para o commit que foi compilado e validado. |
-| Arquivo para o cliente | `ResetadorDePdvV2.exe`, anexado ao GitHub Release correspondente. |
+| Arquivo para o cliente | `CentralAutomação(2.13.4).exe`, gerado em `dist/` e anexado ao GitHub Release correspondente. |
 
 Para uma nova versão:
 
 1. Altere apenas `<Version>` no projeto e atualize a versão/documentação deste README.
-2. Execute o build Release e confira metadados, abertura e extração ZIP/RAR com uma cópia isolada do EXE. Registre os testes reais aplicáveis e suas pendências.
+2. Execute o build Release e confira metadados, abertura e extração ZIP/RAR com uma cópia isolada do EXE usando o nome oficial. Gere a distribuição com `scripts/Build-Distribution.ps1 -SkipBuild` e execute `tests/Verify-Distribution.ps1`. Registre os testes reais aplicáveis e suas pendências.
 3. Revise o diff e faça o commit dos fontes e da documentação.
 4. Integre o PR e crie a tag `vMAJOR.MINOR.PATCH` no commit escolhido. Não publique uma cópia compilada a partir de outra revisão ou com alterações de código pendentes.
-5. Envie a tag ao GitHub. O workflow [verify-release.yml](.github/workflows/verify-release.yml) confere a tag contra `<Version>`, compila e executa os testes em Windows. Só depois publica o EXE testado no Release. O job de PR tem acesso de leitura; apenas o job de publicação por tag pode criar uma release. Tags/releases existentes não são substituídas automaticamente.
+5. Envie a tag ao GitHub. O workflow [verify-release.yml](.github/workflows/verify-release.yml) confere a tag contra `<Version>`, compila e executa os testes em Windows. Só depois cria a cópia padronizada, confere os hashes e envia somente essa cópia como artefato `CentralAutomacao-MAJOR.MINOR.PATCH`. O job por tag baixa esse mesmo artefato, confere novamente nome, arquivo único e SHA-256 antes da publicação. Não recompila nem renomeia outro binário. O job de PR tem acesso de leitura; apenas o job de publicação por tag pode criar uma release. Tags/releases históricas não são alteradas. O instalador remoto `softhecomremoto-install.exe` permanece separado.
 
-Os mesmos testes podem ser executados localmente, sem instalar ou alterar serviços:
+Depois de preparar `dist/`, os mesmos testes podem ser executados localmente, sem instalar ou alterar serviços:
 
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Verify-Portable.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Verify-Workflow.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Verify-Distribution.ps1
 ```
 
-O primeiro testa o EXE sozinho, recursos, ZIP/RAR, download/retry, cancelamento, limpeza e medições. O segundo executa as decisões do fluxo real com operações externas simuladas. Nenhum deles comprova instalação, F11/prints ou conexão remota reais. A fixture RAR de 127 bytes tem origem e licença registradas em [tests/fixtures](tests/fixtures/README.md).
+O primeiro testa o EXE sozinho com o nome oficial em uma pasta Unicode com espaços/parênteses, recursos, ZIP/RAR, download/retry, cancelamento, limpeza e medições. No CI, recebe explicitamente a saída interna antes de gerar `dist/`, mas a cópia isolada usa o nome oficial e tem SHA-256 conferido. O segundo executa as decisões do fluxo real com operações externas simuladas. O terceiro confere a distribuição e testa preparação em caminho Unicode, limpeza de cópia antiga conhecida, preservação de arquivos inesperados e recusa de EXE com versão divergente do projeto. Esses testes não comprovam instalação, F11/prints ou conexão remota reais. A fixture RAR de 127 bytes tem origem e licença registradas em [tests/fixtures](tests/fixtures/README.md).
 
-`bin/`, `obj/`, PDBs, logs e estado local do Visual Studio ficam fora do Git. A limpeza retirou esses artefatos apenas do índice e preservou os arquivos desta máquina; não reescreveu o histórico antigo. Os executáveis de distribuição devem ser publicados em [GitHub Releases](https://github.com/vinnivii/CopiadorPdv/releases), sem exigir DLLs, configuração ou instalação da própria Central.
+`bin/`, `obj/`, `dist/`, PDBs, logs e estado local do Visual Studio ficam fora do Git. A limpeza retirou esses artefatos apenas do índice e preservou os arquivos desta máquina; não reescreveu o histórico antigo. Os executáveis de distribuição devem ser publicados em [GitHub Releases](https://github.com/vinnivii/CopiadorPdv/releases), sem exigir DLLs, configuração ou instalação da própria Central.
 
 O teste de EXE isolado também verifica os perfis personalizado/legado do remoto e usa janelas WinForms artificiais para validar o aviso Avalonia e o isolamento por PID. Os hosts de teste são compilados em uma pasta temporária e encerrados ao terminar; não executam o PDV nem instalam serviços reais.
 

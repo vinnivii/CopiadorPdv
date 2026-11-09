@@ -22,9 +22,13 @@ Data: 06/11/2026. Entrega: novo PR contra `master`; merge e publicação da Cent
 
 ```powershell
 dotnet build .\SoftcomSupportAutomation\SoftcomSupportAutomation.csproj -c Release
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Distribution.ps1 -SkipBuild
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Verify-Portable.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Verify-Workflow.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Verify-Distribution.ps1
 ```
+
+No CI, o teste de portabilidade recebe explicitamente a saída interna e a isola com o nome oficial; a cópia de distribuição só é preparada depois de aprovados os testes.
 
 O script de EXE isolado também compila um pequeno host WinForms de teste em uma pasta temporária e abre/encerra somente suas próprias fixtures. Não executa o PDV nem instala o cliente remoto ou serviços.
 
@@ -37,6 +41,26 @@ O script de EXE isolado também compila um pequeno host WinForms de teste em uma
 | Fluxos simulados | Reset Completo, Reinstalação Limpa com/sem DLLs e Prints preservados; falha na captura cancela a preparação paralela e impede desinstalação, preservação/alteração de LocalAppData e instalação. |
 
 Resultados locais aprovados: build Release com **zero erros e três avisos MSB3277**, EXE único de **1.996.800 bytes**, FileVersion/AssemblyVersion 2.13.4.0 e ambos os scripts acima. O download de 10 MiB em 160 blocos levou **1.003 ms**, os cancelamentos responderam em **5–82 ms** após o sinal e o timeout de leitura de teste de 200 ms encerrou em **228 ms**. O asset publicado também foi aprovado pelo próprio validador de PE/assinatura da Central, sem executá-lo.
+
+## Revisão complementar da PR #2 — 09/11/2026
+
+### Distribuição e testes automatizados
+
+- Nome oficial: **`CentralAutomação(2.13.4).exe`**, gerado de `<Version>` sem alterar `AssemblyName`, `AssemblyVersion` ou `FileVersion` no projeto.
+- O script de build/distribuição gera somente esse arquivo em `dist/`, confere o SHA-256 da cópia contra a saída interna e recusa um EXE com metadados divergentes do projeto. Remove apenas cópias antigas com o padrão oficial; arquivos desconhecidos bloqueiam a preparação e são preservados.
+- SHA-256 do build local e da cópia de distribuição: `7c178654d97d756dca66b40854af2f1d715bc87901d7182bf459e5c020c4c791`. O CI verifica seus próprios hashes de origem/cópia; não exige reproduzir o hash entre builds de revisões diferentes.
+- Windows PowerShell 5.1: scripts com literais Unicode em UTF-8 com BOM; saídas do workflow em UTF-8. Fixtures confirmaram caminhos com acentos, espaços e parênteses, arquivo único, substituição de cópia antiga conhecida, preservação de `.config` inesperado e recusa de versão divergente.
+- Abertura local pelo Windows da cópia isolada com nome oficial: janela principal confirmada em 0,30 s, PID 17096, FileVersion 2.13.4.0 e somente um arquivo na pasta. O processo de teste foi encerrado ao terminar.
+- Portabilidade, scripts incorporados, ZIP/RAR, download/retry/cancelamento, perfis do remoto e fluxos simulados passaram novamente. As fixtures de janela incluem também login aceito no PID iniciado e rejeitado quando pertence a outro PID; o aviso com campo de texto permanece excluído da identificação de login.
+- O workflow envia somente a cópia oficial e verifica nome/arquivo único/hash novamente depois de baixar o artefato para uma futura publicação por tag `v2.13.4`. Nenhuma release foi publicada por esta revisão; o remoto e suas releases não foram alterados.
+
+### Teste real do Softshop — separado das fixtures
+
+Ambiente: Windows 10 Pro 10.0.19045, 64 bits. Instalação observada: `Program Files (x86)\Softcom Tecnologia\Softshop Caixa\Softshop.exe`, FileVersion **8.41.4.0**.
+
+A abertura foi feita por `StartSoftshopForConfiguration()` e o login identificado por `WaitForSoftshopWindow()`: **PID iniciado 3588 e PID do login 3588**, em 15,45 s, sem processo filho observado. O aplicativo aberto para o teste foi encerrado ao terminar. Não foram preenchidas credenciais, enviado F11 ou executadas etapas de Reset/desinstalação/instalação.
+
+O resultado confirma o mesmo processo nessa versão e ambiente. Não comprova versões antigas ou um cenário de processo filho. Sem evidência de filho, a associação estrita por PID foi preservada; não há fallback para qualquer processo chamado Softshop. O aviso Avalonia real continua sem reprodução e seu tratamento foi validado com janelas artificiais.
 
 ## Limites
 

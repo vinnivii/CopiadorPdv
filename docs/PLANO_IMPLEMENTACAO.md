@@ -2,6 +2,8 @@
 
 Atualização de 06/11/2026: v2.13.4 implementa Softhecom Remoto via GitHub Releases, reconhecimento do perfil personalizado e fechamento do aviso Avalonia no processo iniciado pela Central. Entrega em novo PR, sem merge ou publicação da Central. Evidências em [VALIDACAO-v2.13.4.md](VALIDACAO-v2.13.4.md); a avaliação histórica abaixo permanece referente à sua base original.
 
+Revisão complementar de 09/11/2026, na mesma PR #2: o nome de distribuição passa a `CentralAutomação(MAJOR.MINOR.PATCH).exe`, gerado de `Version` por `scripts/Build-Distribution.ps1`. `ResetadorDePdvV2.exe` permanece como saída interna. Somente a cópia verificada em `dist/` segue para artefato/release da Central; o instalador remoto e as releases históricas permanecem separados. O teste real de PID do Softshop e os testes simulados estão registrados separadamente na validação da v2.13.4.
+
 Data: 05/11/2026. Base avaliada: `a4564e8` (v2.13.2). Implementação dos itens 1 a 9: v2.13.3, em PR.
 
 ## Avaliação
@@ -72,7 +74,7 @@ Verificação executada:
 
 Não foram alteradas instalações, senhas, serviços ou configurações do Windows. Os dois arquivos `VALIDACAO-v2.13.0.md` e `VALIDACAO-v2.13.1.md` já estavam removidos no diretório antes desta manutenção; essas exclusões preexistentes não foram restauradas ou incluídas na retirada de artefatos do índice.
 
-Saída local: `SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe`.
+Saída local interna: `SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe`. A partir da v2.13.4, a cópia para o técnico é `dist/CentralAutomação(Version).exe`; os resultados históricos desta etapa continuam referentes à v2.13.3.
 
 Publicação: revisar e integrar o PR; depois enviar a tag da versão. O workflow compila e testa a revisão marcada antes de criar o Release. Não há publicação de release apenas por abrir/integrar o PR. As duas exclusões locais de relatórios preexistentes continuam fora desta entrega.
 

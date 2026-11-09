@@ -1,6 +1,7 @@
 # Saídas e caches de compilação (permanecem locais).
 **/bin/
 **/obj/
+dist/
 *.pdb
 *.log
 

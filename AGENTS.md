@@ -38,11 +38,13 @@ Evite qualquer alteração que transforme a Central em algo que precise ser inst
 
 ## 3. Executável único
 
-A distribuição deve continuar sendo, preferencialmente:
+A partir da v2.13.4, o nome do executável de distribuição deve ser gerado a partir de `Version` no projeto:
 
 ```text
-ResetadorDePdvV2.exe
+CentralAutomação(MAJOR.MINOR.PATCH).exe
 ```
+
+Preservar acentos e parênteses, sem `v` no nome. Manter `ResetadorDePdvV2.exe` como nome interno do build e gerar a cópia em `dist/` usando `scripts/Build-Distribution.ps1`. Conferir SHA-256 idêntico e somente o EXE final em `dist/`. Não renomear releases históricas.
 
 Não tornar obrigatório distribuir ao lado do EXE:
 
@@ -562,6 +564,8 @@ Confirmar geração de:
 SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
 ```
 
+Essa é a saída interna. Gerar também `dist/CentralAutomação(Version).exe` com o script de distribuição, sem alterar os metadados do EXE compilado.
+
 ## 30. Testes mínimos após alterações no PDV
 
 ### Reset Completo
@@ -638,7 +642,7 @@ obj/
 *.log
 ```
 
-Distribuir `ResetadorDePdvV2.exe` como anexo do GitHub Release correspondente à tag. Os arquivos de build permanecem locais; uma limpeza do índice não deve apagar as cópias da máquina nem reescrever o histórico antigo. Não excluir fixtures ou recursos de código-fonte deliberados apenas por serem binários.
+Distribuir `CentralAutomação(MAJOR.MINOR.PATCH).exe` como anexo do GitHub Release correspondente à tag `vMAJOR.MINOR.PATCH`. Manter `dist/` fora do Git e separado do instalador `softhecomremoto-install.exe`. Os arquivos de build permanecem locais; uma limpeza do índice não deve apagar as cópias da máquina nem reescrever o histórico antigo. Não excluir fixtures ou recursos de código-fonte deliberados apenas por serem binários.
 
 ## 33. Open source
 
