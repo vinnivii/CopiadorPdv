@@ -41,6 +41,8 @@ No build local, origem e cópia têm **1.999.872 bytes** e SHA-256 `662f9081bf96
 
 ## Limites
 
-Os testes de janela são fixtures. Não foi repetido o atendimento real no PDV 8.37.3.0 do cliente nem executado Reset, F11/captura ou instalação real nesta revisão. A correção resolve o defeito reproduzível de localização de janelas e o técnico confirmou o painel aberto na ocorrência; a hierarquia UIA daquela máquina ainda não foi inspecionada. Um aviso desconhecido ou uma falha persistente do PDV continua interrompendo a captura com a instalação atual preservada.
+Após testar o EXE corrigido, o responsável confirmou em 09/11/2026: **“DEU CERTO”**, e autorizou o merge e a publicação. Esse retorno valida o atendimento relatado; não foi fornecido um novo log nem um inventário detalhado do ambiente do teste.
 
-Nenhuma release/tag foi publicada nesta correção. As releases históricas e o instalador do Softhecom Remoto permanecem inalterados. As exclusões locais anteriores de `VALIDACAO-v2.13.0.md` e `VALIDACAO-v2.13.1.md` ficam fora do commit.
+Os testes automatizados de janela continuam sendo fixtures; a hierarquia UIA da máquina do cliente não foi inspecionada diretamente pelo agente. Um aviso desconhecido ou uma falha persistente do PDV continua interrompendo a captura com a instalação atual preservada. Não foram homologados outros ambientes nesta revisão.
+
+A publicação autorizada usa a tag `v2.13.5`, com build Release e testes do workflow antes de disponibilizar o executável. As releases históricas e o instalador do Softhecom Remoto permanecem inalterados. As exclusões locais anteriores de `VALIDACAO-v2.13.0.md` e `VALIDACAO-v2.13.1.md` ficam fora do commit.
