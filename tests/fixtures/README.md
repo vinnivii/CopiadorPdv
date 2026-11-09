@@ -9,3 +9,7 @@
 - Conteúdo: `payload.txt`, com `hello from RAR!` e uma quebra de linha.
 
 A licença original está em `LICENSE.SharpCompress.txt`. É uma fixture de fonte de 127 bytes, não um artefato de build nem um instalador. Os testes nunca executam arquivos extraídos.
+
+## Hosts de teste
+
+`DialogHost.cs` cria janelas artificiais para UI Automation. `InstallerHost.cs` apenas retorna o código solicitado ou grava seu PID e aguarda; não chama Windows Installer, instala produtos ou altera serviços/registro. Ambos são compilados em uma pasta temporária pelo teste de EXE isolado. Os processos são encerrados ao final dos cenários.

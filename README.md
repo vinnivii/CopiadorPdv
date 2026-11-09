@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.13.5**
+Versão atual: **2.13.6**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -29,17 +29,19 @@ Os scripts PowerShell e Batch são incorporados ao executável sem alterações.
 
 Na página **Softshop Caixa**, selecione **Reset Completo / Instalação do PDV**, **Reinstalação Limpa** ou **Prints de Configuração**. Nos dois modos que instalam o caixa, o download da versão selecionada é a primeira etapa do atendimento e ocorre em background, com recursos nativos do .NET Framework. A preparação valida o arquivo, confere o SHA-256 quando cadastrado e extrai `SetupSoftshopFrenteLoja.msi`. Download, SHA-256 e extração são executados uma única vez por atendimento; a instalação reutiliza o MSI já preparado.
 
+Quando a atualização de DLLs está selecionada, seu download e extração também começam no início do atendimento, em paralelo ao pacote do PDV e à captura do Reset Completo. Somente a preparação é paralela; desinstalações e instalações continuam em sequência.
+
 ### Reset Completo
 
-1. Inicia a preparação do pacote do PDV em background e encerra os processos `Softshop.exe`.
+1. Inicia a preparação do pacote do PDV e, se selecionado, de SetupSoftcomDLLs em background, antes dos prints, e encerra os processos `Softshop.exe`.
 2. Localiza a instalação existente nos caminhos de 32 e 64 bits e abre o Softshop Caixa.
 3. Localiza o campo **Senha**, preenche a senha de suporte e envia `F11`, sem clicar em **Logar**.
 4. Trata o aviso de RPC conforme a rotina existente, percorre as abas e subabas e salva os prints das configurações.
 5. Exibe as senhas das telas SQL Server e E-Mail quando possível e salva as credenciais Pix e Quero Bônus em `Credenciais_APIs_Softcom.txt`.
 6. Encerra o Softshop e aguarda a preparação do pacote caso ainda esteja em andamento. Se o pacote ficar pronto durante a captura, registra isso e continua capturando normalmente.
-7. Somente após confirmar download, SHA-256 quando aplicável e MSI extraído, desinstala todas as entradas registradas de **Softshop Caixa**.
+7. Somente após confirmar download, SHA-256 quando aplicável e MSI extraído do PDV e das DLLs selecionadas, desinstala todas as entradas registradas de **Softshop Caixa**.
 8. Preserva por renomeação a pasta da instalação e `%LOCALAPPDATA%\Softcom Tecnologia` e `%LOCALAPPDATA%\Softcom_Tecnologia`. Usa os sufixos `_`, `_1`, `_2` etc., sem sobrescrever backups; mantém as novas tentativas por até 30 segundos em caso de bloqueio temporário.
-9. Quando selecionado, atualiza `SetupSoftcomDLLs`.
+9. Quando selecionado, atualiza `SetupSoftcomDLLs` usando o MSI preparado, sem novo download.
 10. Instala silenciosamente o MSI já preparado, sem repetir o download.
 11. Abre a nova instalação, preenche a senha, envia `F11` e deixa as Configurações abertas.
 12. Abre a pasta dos prints e do log.
@@ -56,11 +58,11 @@ A Central acompanha o PID do Softshop desde a abertura, antes do login, e regist
 
 ### Reinstalação Limpa
 
-1. Inicia a preparação do pacote em background.
+1. Inicia a preparação do PDV e das DLLs selecionadas em background.
 2. Encerra os processos `Softshop.exe` e registra as pastas da instalação existentes nos caminhos de 32 e 64 bits.
 3. Desinstala todas as entradas registradas de **Softshop Caixa** enquanto o pacote é preparado. O aviso conhecido de backup do cache recebe **OK** automaticamente.
 4. Encerra processos restantes e preserva somente as pastas da instalação por renomeação, usando os sufixos `_`, `_1`, `_2` etc., sem sobrescrever backups. Mantém as novas tentativas por até 30 segundos em caso de bloqueio temporário.
-5. Se **Atualizar SetupSoftcomDLLs antes de instalar** estiver marcado, executa a mesma rotina de DLLs do Reset Completo enquanto o pacote do PDV continua sendo preparado. Os temporários de DLLs e PDV ficam em pastas separadas.
+5. Se **Atualizar SetupSoftcomDLLs antes de instalar** estiver marcado, aguarda o MSI das DLLs preparado em paralelo e executa a mesma rotina do Reset Completo, sem repetir o download. As DLLs só são desinstaladas após confirmar seu MSI disponível. Os temporários de DLLs e PDV ficam em pastas separadas.
 6. Aguarda a preparação do pacote, incluindo validação do arquivo, SHA-256 quando cadastrado e extração do MSI.
 7. Instala a versão selecionada e informa a conclusão.
 
@@ -86,9 +88,11 @@ Os três modos compartilham o watcher de avisos conhecidos. Ele reconhece a mens
 
 ### Cancelamento da preparação em paralelo
 
-**Parar execução** e o fechamento da janela cancelam o workflow e a preparação do pacote. Arquivos parciais de download ou extração são removidos, e a instalação seguinte não começa. Se outra etapa do workflow falhar, a preparação em andamento também é cancelada. A Central aguarda a tarefa de preparação encerrar antes de liberar outra execução ou fechar, evitando tarefas órfãs e dois downloads no mesmo arquivo.
+**Parar execução** e o fechamento da janela cancelam o workflow e as preparações de PDV e DLLs. Arquivos parciais de download ou extração são removidos, e a instalação seguinte não começa. Se outra etapa do workflow falhar, as preparações em andamento também são canceladas. A Central aguarda ambas as tarefas encerrarem antes de liberar outra execução ou fechar, evitando tarefas órfãs e dois downloads no mesmo arquivo.
 
 Antes de cada preparação, apenas as saídas antigas `PDV_SoftshopCaixa_Selecionado.zip`, `PDV_SoftshopCaixa_Selecionado.rar` e `SetupSoftshopFrenteLoja.msi` são removidas da pasta `C:\Softcom\ResetCaixa\Download`.
+
+As DLLs usam exclusivamente `C:\Softcom\ResetCaixa\DLLs\SetupSoftcomDLLs.rar` e `SetupSoftcomDLLs.msi`; essas duas saídas antigas são limpas antes da preparação. Cada pacote é baixado e extraído uma vez no atendimento. A opção desmarcada e o modo Prints de Configuração não preparam DLLs.
 
 ### Downloads em conexão instável e duração das etapas
 
@@ -97,6 +101,12 @@ Os downloads de PDV, DLLs e Softhecom Remoto usam o mesmo helper, com até três
 Arquivos parciais são descartados antes da próxima tentativa. Erros de disco, TLS/confiança, 401/403 e outros erros definitivos não são repetidos. SHA-256, assinatura e conteúdo são validados depois do download; reprovar uma dessas verificações não inicia um novo download. **Parar execução** cancela a transferência ou o intervalo e aguarda a operação de rede terminar antes de liberar outra execução.
 
 O log registra a duração da preparação do pacote, captura, encerramento do Softshop, desinstalação, preservação de pastas, DLLs, instalação e atendimento total, inclusive em falha/cancelamento. A preparação continua paralela: sua duração não deve ser somada à captura para calcular o tempo total. Uma falha ao gravar somente a medição não substitui o resultado original da operação.
+
+### Windows Installer ocupado (1618)
+
+As instalações e desinstalações MSI do PDV e das DLLs repetem o comando somente quando o Windows informa **1618 — outra instalação em andamento**. A espera entre tentativas é cancelável, e cada operação tem prazo total de dez minutos, incluindo tentativas e execução. Outros erros continuam sendo informados sem repetição automática. As instalações permanecem sequenciais; nenhuma instalação de outro programa é encerrada para liberar o Windows Installer.
+
+Se a instalação do PDV falhar, a mensagem informa o caminho do MSI preservado para diagnóstico/recuperação. Os backups já produzidos não são apagados. Um 1618 das DLLs não pode ser tratado como sucesso apenas porque o produto aparece no registro. O retry de rede continua separado, seletivo e limitado a três tentativas.
 
 ### Caminho do PDV por arquitetura
 
@@ -276,7 +286,7 @@ Para compilar e gerar automaticamente a cópia de distribuição:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Distribution.ps1
 ```
 
-Se o build já foi executado e validado, use `-SkipBuild`. O script lê `<Version>` do projeto, confere os metadados e gera somente **`dist\CentralAutomação(2.13.5).exe`** nesta versão. O formato obrigatório é `CentralAutomação(MAJOR.MINOR.PATCH).exe`, com acentos e parênteses e sem `v`. O SHA-256 deve ser idêntico ao da saída interna. A cópia não altera nome da assembly, versão ou conteúdo do executável.
+Se o build já foi executado e validado, use `-SkipBuild`. O script lê `<Version>` do projeto, confere os metadados e gera somente **`dist\CentralAutomação(2.13.6).exe`** nesta versão. O formato obrigatório é `CentralAutomação(MAJOR.MINOR.PATCH).exe`, com acentos e parênteses e sem `v`. O SHA-256 deve ser idêntico ao da saída interna. A cópia não altera nome da assembly, versão ou conteúdo do executável.
 
 O script remove apenas cópias anteriores com esse mesmo padrão em `dist/`. Arquivos ou diretórios desconhecidos bloqueiam a preparação sem serem apagados. A pasta final deve conter somente o EXE, sem DLLs, PDBs ou `.config`. Os scripts PowerShell com nomes Unicode usam UTF-8 com BOM para compatibilidade com Windows PowerShell 5.1.
 
@@ -288,14 +298,14 @@ A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAu
 
 | Item | Padrão |
 | --- | --- |
-| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.5`. |
+| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.6`. |
 | MAJOR | Mudança incompatível que exige orientação de migração. |
 | MINOR | Nova automação ou funcionalidade compatível. |
 | PATCH | Correção ou manutenção compatível, sem nova automação. |
-| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.5.0` neste release. |
-| User-Agent | `SoftcomSupportAutomation/2.13.5`, calculado pela aplicação. |
-| Tag Git | `v2.13.5`, apontando para o commit que foi compilado e validado. |
-| Arquivo para o cliente | `CentralAutomação(2.13.5).exe`, gerado em `dist/` e anexado ao GitHub Release correspondente. |
+| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.6.0` neste release. |
+| User-Agent | `SoftcomSupportAutomation/2.13.6`, calculado pela aplicação. |
+| Tag Git | `v2.13.6`, apontando para o commit que foi compilado e validado. |
+| Arquivo para o cliente | `CentralAutomação(2.13.6).exe`, gerado em `dist/` e anexado ao GitHub Release correspondente. |
 
 Para uma nova versão:
 
@@ -319,7 +329,7 @@ O primeiro testa o EXE sozinho com o nome oficial em uma pasta Unicode com espa�
 
 O teste de EXE isolado também verifica os perfis personalizado/legado do remoto e usa janelas WinForms artificiais para validar o aviso Avalonia e o isolamento por PID. Os hosts de teste são compilados em uma pasta temporária e encerrados ao terminar; não executam o PDV nem instalam serviços reais.
 
-Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.5](docs/VALIDACAO-v2.13.5.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
+Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.6](docs/VALIDACAO-v2.13.6.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
 
 ## Observações de segurança
 

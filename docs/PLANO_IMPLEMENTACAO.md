@@ -14,7 +14,7 @@ Conferências realizadas no repositório:
 
 - Os 53 arquivos rastreados em `bin/` e `obj/` somavam **19.519.098 bytes** na árvore do commit. `processo.log` também estava rastreado. Os executáveis rastreados estavam dentro dessas pastas; não havia outro EXE de produção fora delas.
 - Os dois READMEs continham a mesma documentação. A versão estava repetida no projeto, na interface e em três chamadas de download.
-- Reset Completo e Reinstalação Limpa reutilizam `UpdateSoftcomDlls()`. O download do PDV é preparado antecipadamente e continua independente da captura/atualização de DLLs.
+- Reset Completo e Reinstalação Limpa reutilizam `UpdateSoftcomDlls(msiPath)`. PDV e DLLs selecionadas são preparados antecipadamente, em pastas separadas, antes da captura/desinstalação; as instalações permanecem sequenciais.
 - Na base avaliada, o downloader já tratava cancelamento/parciais, mas não tinha tentativas seletivas ou timeout explícito de inatividade. O PR implementa ambos no helper compartilhado.
 - A verificação de senha do HopToDesk usa o perfil do processo elevado e a configuração do serviço. O cenário com outro administrador merece teste antes de uma alteração.
 

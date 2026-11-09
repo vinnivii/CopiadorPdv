@@ -63,6 +63,10 @@ try {
     Write-Output 'PASS: EXE isolado, metadados/UI/User-Agent, recursos, ZIP, RAR e cancelamento de extracao.'
     Add-Type -Path (Join-Path $PSScriptRoot 'DownloadTests.cs') -ReferencedAssemblies System,System.Core,System.Windows.Forms
     [DownloadTests]::Run($form,$dataRoot)
+    $installerFixtureExe = Join-Path $dataRoot 'InstallerHost.exe'
+    Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\InstallerHost.cs') -OutputAssembly $installerFixtureExe -OutputType ConsoleApplication -ReferencedAssemblies System
+    Add-Type -Path (Join-Path $PSScriptRoot 'InstallerTests.cs') -ReferencedAssemblies System,System.Core
+    [InstallerTests]::Run($form,$dataRoot,$installerFixtureExe)
     Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
     $fixtureExe = Join-Path $dataRoot 'Softshop.exe'
     Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\DialogHost.cs') -OutputAssembly $fixtureExe -OutputType WindowsApplication -ReferencedAssemblies System,System.Windows.Forms,System.Drawing

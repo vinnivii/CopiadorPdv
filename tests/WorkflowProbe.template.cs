@@ -34,9 +34,12 @@ public class WorkflowProbe
     private int activeSoftshopProcessId, cacheBackupDialogClosed, rpcUnavailableDialogClosed, avaloniaDialogClosed;
     private readonly ManualResetEventSlim packageStarted = new ManualResetEventSlim();
     private readonly ManualResetEventSlim packageMayFinish = new ManualResetEventSlim();
+    private readonly ManualResetEventSlim dllPackageStarted = new ManualResetEventSlim();
+    private readonly ManualResetEventSlim dllPackageMayFinish = new ManualResetEventSlim();
     private readonly List<string> steps = new List<string>();
     private bool failPackage, cancelCapture, cancelDlls, failCapture, ready;
     private bool packageCancelled;
+    private bool dllPackageCancelled, dllReady, failDllPackage;
 
     // O metodo de producao e inserido integralmente pelo script, sem reescrever suas ramificacoes.
     __RUN_WORKFLOW__
@@ -56,10 +59,21 @@ public class WorkflowProbe
         Record("ready");
         return "prepared.msi";
     }
+    private string PrepareDllPackage(CancellationToken token)
+    {
+        Record("prepare-dlls"); dllPackageStarted.Set();
+        if(failDllPackage) throw new InvalidDataException("Injected DLL package failure");
+        try { dllPackageMayFinish.Wait(token); }
+        catch(OperationCanceledException) { dllPackageCancelled = true; Record("dll-package-cancelled"); throw; }
+        dllReady = true; Record("dlls-ready");
+        return "dlls-prepared.msi";
+    }
     private void StopSoftshop(bool forced = false)
     {
         if(selectedPdvAutomationMode != PdvAutomationMode.ConfigurationPrints && !packageStarted.Wait(3000))
             throw new Exception("Package preparation was not started early");
+        if(selectedPdvAutomationMode != PdvAutomationMode.ConfigurationPrints && updateDllsRequested && !dllPackageStarted.Wait(3000))
+            throw new Exception("DLL preparation was not started early");
         Record("stop");
     }
     private string[] GetSoftshopExecutableCandidates()
@@ -70,10 +84,11 @@ public class WorkflowProbe
     {
         Record("capture");
         if(failCapture) throw new InvalidOperationException("Injected login failure");
+        if(cancelCapture) { stopRequested = true; return; }
         packageMayFinish.Set();
-        if(cancelCapture) stopRequested = true;
+        dllPackageMayFinish.Set();
     }
-    private string WaitForPreparedPdvPackage(Task<string> task, string waiting, string failure)
+    private string WaitForPreparedPackage(Task<string> task, string waiting, string failure)
     {
         Record("wait"); ThrowIfCancellationRequested();
         return task.GetAwaiter().GetResult();
@@ -84,9 +99,11 @@ public class WorkflowProbe
         if(folders.Count() != 2) throw new Exception("Both installation directories must be preserved");
         Record(localAppData ? "preserve+localappdata" : "preserve-install-only");
         if(!updateDllsRequested) packageMayFinish.Set();
+        else dllPackageMayFinish.Set();
     }
-    private void UpdateSoftcomDlls()
+    private void UpdateSoftcomDlls(string path)
     {
+        if(!dllReady || path != "dlls-prepared.msi") throw new Exception("DLL installation must reuse its prepared MSI");
         Record("dlls");
         if(selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall && ready)
             throw new Exception("DLL update should run while the deliberately delayed package is preparing");
@@ -104,10 +121,10 @@ public class WorkflowProbe
         if(!condition) throw new Exception("FAIL: " + message);
         Console.WriteLine("PASS: " + message);
     }
-    private static WorkflowProbe Run(PdvAutomationMode mode, bool dlls, bool fail = false, bool cancel = false, bool cancelDlls = false, bool failCapture = false)
+    private static WorkflowProbe Run(PdvAutomationMode mode, bool dlls, bool fail = false, bool cancel = false, bool cancelDlls = false, bool failCapture = false, bool failDll = false)
     {
         var probe = new WorkflowProbe { selectedPdvAutomationMode = mode, updateDllsRequested = dlls,
-            failPackage = fail, cancelCapture = cancel, cancelDlls = cancelDlls, failCapture = failCapture };
+            failPackage = fail, cancelCapture = cancel, cancelDlls = cancelDlls, failCapture = failCapture, failDllPackage = failDll };
         probe.RunWorkflow();
         Console.WriteLine("TRACE: " + mode + ", dlls=" + dlls + ": " + string.Join(" -> ", probe.steps));
         return probe;
@@ -121,22 +138,35 @@ public class WorkflowProbe
             Require(clean.steps.Contains("preserve-install-only") && !clean.steps.Contains("capture") && !clean.steps.Contains("preserve+localappdata") && !clean.steps.Contains("open-config") && !clean.steps.Contains("open-prints"), "Reinstalacao Limpa preserva ambas as instalacoes, sem captura/LocalAppData/abertura");
             Require(clean.steps.IndexOf("prepare") < clean.steps.IndexOf("uninstall") && clean.steps.IndexOf("uninstall") < clean.steps.IndexOf("preserve-install-only") && clean.steps.IndexOf("preserve-install-only") < clean.steps.IndexOf("install"), "Download antecipado e ordem de desinstalacao/preservacao/instalacao");
             if(dlls) Require(clean.steps.IndexOf("preserve-install-only") < clean.steps.IndexOf("dlls") && clean.steps.IndexOf("dlls") < clean.steps.IndexOf("ready"), "DLLs apos preservar pastas, com preparacao do PDV ainda em andamento");
+            Require(clean.steps.Contains("prepare-dlls") == dlls && (!dlls || clean.steps.IndexOf("prepare-dlls") < clean.steps.IndexOf("uninstall")), "Preparacao antecipada de DLLs respeita checkbox na Reinstalacao Limpa");
+            Require(clean.steps.Count(s => s == "prepare") == 1 && clean.steps.Count(s => s == "prepare-dlls") == (dlls ? 1 : 0), "Cada pacote preparado apenas uma vez na Reinstalacao Limpa");
         }
         var full = Run(PdvAutomationMode.FullReset, true);
         Require(full.steps.Contains("capture") && full.steps.Contains("dlls") && full.steps.Contains("preserve+localappdata") && full.steps.Contains("open-config") && full.steps.Contains("open-prints") && full.steps.Contains("success"), "Reset Completo mantem captura, DLLs, preservacao e abertura");
         Require(full.steps.IndexOf("ready") < full.steps.IndexOf("uninstall"), "Reset Completo so desinstala apos pacote pronto");
+        Require(full.steps.IndexOf("prepare") < full.steps.IndexOf("capture") && full.steps.IndexOf("prepare-dlls") < full.steps.IndexOf("capture"), "PDV e DLLs iniciados antes dos prints");
+        Require(full.steps.IndexOf("dlls-ready") < full.steps.IndexOf("uninstall"), "Reset Completo aguarda ambos os pacotes antes de desinstalar");
+        Require(full.steps.Count(s => s == "prepare") == 1 && full.steps.Count(s => s == "prepare-dlls") == 1 && full.steps.IndexOf("dlls") < full.steps.IndexOf("install"), "MSIs reaproveitados sem novo download e instalacoes em sequencia");
+        var fullWithoutDlls = Run(PdvAutomationMode.FullReset, false);
+        Require(fullWithoutDlls.steps.Contains("success") && fullWithoutDlls.steps.Contains("capture") &&
+            !fullWithoutDlls.steps.Contains("prepare-dlls") && !fullWithoutDlls.steps.Contains("dlls"), "Reset Completo com checkbox desmarcado nao prepara nem atualiza DLLs");
         var prints = Run(PdvAutomationMode.ConfigurationPrints, true);
-        Require(prints.steps.Contains("capture") && prints.steps.Contains("open-prints") && !prints.steps.Contains("prepare") && !prints.steps.Contains("uninstall") && !prints.steps.Contains("dlls") && !prints.steps.Contains("install"), "Prints de Configuracao nao prepara, instala ou atualiza DLLs mesmo com flag antiga");
+        Require(prints.steps.Contains("capture") && prints.steps.Contains("open-prints") && !prints.steps.Contains("prepare") && !prints.steps.Contains("prepare-dlls") && !prints.steps.Contains("uninstall") && !prints.steps.Contains("dlls") && !prints.steps.Contains("install"), "Prints de Configuracao nao prepara, instala ou atualiza DLLs mesmo com flag antiga");
         var failure = Run(PdvAutomationMode.FullReset, true, true);
         Require(failure.steps.Contains("error") && !failure.steps.Contains("uninstall") && !failure.steps.Contains("install"), "Falha do pacote no Reset Completo preserva instalacao atual");
         var cancellation = Run(PdvAutomationMode.FullReset, true, false, true);
         Require(cancellation.steps.Contains("cancelled") && !cancellation.steps.Contains("uninstall") && !cancellation.steps.Contains("install") && cancellation.steps.Last() == "finished", "Cancelamento na captura impede desinstalacao/instalacao e encerra workflow");
+        Require(cancellation.packageCancelled && cancellation.dllPackageCancelled, "Parar na captura cancela os dois pacotes e aguarda ambos encerrarem");
         var dllCancellation = Run(PdvAutomationMode.CleanReinstall, true, false, false, true);
         Require(dllCancellation.steps.Contains("cancelled") && !dllCancellation.steps.Contains("install") && dllCancellation.steps.Last() == "finished", "Cancelamento durante DLLs na Reinstalacao Limpa impede instalar PDV");
         var captureFailure = Run(PdvAutomationMode.FullReset, true, failCapture: true);
-        Require(captureFailure.packageCancelled && captureFailure.steps.Contains("error") &&
+        Require(captureFailure.packageCancelled && captureFailure.dllPackageCancelled && captureFailure.steps.Contains("error") &&
             !captureFailure.steps.Contains("uninstall") && !captureFailure.steps.Contains("install") &&
             !captureFailure.steps.Contains("preserve+localappdata") && captureFailure.steps.Last() == "finished",
             "Falha na captura cancela preparacao paralela e preserva instalacao e LocalAppData");
+        var dllFailure = Run(PdvAutomationMode.FullReset, true, failDll: true);
+        Require(dllFailure.steps.Contains("error") && !dllFailure.steps.Contains("uninstall") && !dllFailure.steps.Contains("dlls") && !dllFailure.steps.Contains("install"), "Falha na preparacao de DLLs preserva PDV atual no Reset Completo");
+        var cleanDllFailure = Run(PdvAutomationMode.CleanReinstall, true, failDll: true);
+        Require(cleanDllFailure.steps.Contains("preserve-install-only") && cleanDllFailure.steps.Contains("error") && !cleanDllFailure.steps.Contains("dlls") && !cleanDllFailure.steps.Contains("install") && cleanDllFailure.packageCancelled, "Falha nas DLLs apos desinstalacao preserva backups, nao instala e cancela PDV pendente");
     }
 }
