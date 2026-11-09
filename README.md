@@ -2,7 +2,7 @@
 
 Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em um único executável administrativo. A interface utiliza um tema escuro corporativo monocromático, com variações de preto, branco e cinza, e separa as automações por aplicação e por utilitários rápidos.
 
-Versão atual: **2.13.4**
+Versão atual: **2.13.5**
 Responsável: **Marcus Silva - Teresina**
 
 ## Automações disponíveis
@@ -45,6 +45,8 @@ Na página **Softshop Caixa**, selecione **Reset Completo / Instalação do PDV*
 12. Abre a pasta dos prints e do log.
 
 Se o download, o SHA-256 ou a extração falharem, a captura pode terminar, mas o PDV existente **não é desinstalado**. O log e a mensagem final informam: “Não foi possível preparar o novo pacote do PDV. A instalação atual foi mantida.”
+
+A busca pelas Configurações inclui janelas modais vinculadas ao login na árvore de automação, sempre no mesmo PID do Softshop iniciado. Se o login estiver bloqueado enquanto o painel carrega, a Central aguarda o painel com timeout e cancelamento, sem repetir F11 sobre a janela desabilitada. Avisos desconhecidos continuam exigindo intervenção do técnico: a captura falha antes de remover a instalação e registra somente o estado estrutural das janelas, sem coletar textos ou valores dos campos.
 
 Quando `Softshop.exe` não existe nos caminhos verificados, o Reset entra em **instalação nova**: pula captura, desinstalação e renomeação de pastas, aguarda o pacote, respeita a atualização opcional das DLLs e instala e abre o caixa nas Configurações.
 
@@ -274,7 +276,7 @@ Para compilar e gerar automaticamente a cópia de distribuição:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Distribution.ps1
 ```
 
-Se o build já foi executado e validado, use `-SkipBuild`. O script lê `<Version>` do projeto, confere os metadados e gera somente **`dist\CentralAutomação(2.13.4).exe`** nesta versão. O formato obrigatório é `CentralAutomação(MAJOR.MINOR.PATCH).exe`, com acentos e parênteses e sem `v`. O SHA-256 deve ser idêntico ao da saída interna. A cópia não altera nome da assembly, versão ou conteúdo do executável.
+Se o build já foi executado e validado, use `-SkipBuild`. O script lê `<Version>` do projeto, confere os metadados e gera somente **`dist\CentralAutomação(2.13.5).exe`** nesta versão. O formato obrigatório é `CentralAutomação(MAJOR.MINOR.PATCH).exe`, com acentos e parênteses e sem `v`. O SHA-256 deve ser idêntico ao da saída interna. A cópia não altera nome da assembly, versão ou conteúdo do executável.
 
 O script remove apenas cópias anteriores com esse mesmo padrão em `dist/`. Arquivos ou diretórios desconhecidos bloqueiam a preparação sem serem apagados. A pasta final deve conter somente o EXE, sem DLLs, PDBs ou `.config`. Os scripts PowerShell com nomes Unicode usam UTF-8 com BOM para compatibilidade com Windows PowerShell 5.1.
 
@@ -286,14 +288,14 @@ A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAu
 
 | Item | Padrão |
 | --- | --- |
-| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.4`. |
+| Versão estável | `MAJOR.MINOR.PATCH`, por exemplo `2.13.5`. |
 | MAJOR | Mudança incompatível que exige orientação de migração. |
 | MINOR | Nova automação ou funcionalidade compatível. |
 | PATCH | Correção ou manutenção compatível, sem nova automação. |
-| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.4.0` neste release. |
-| User-Agent | `SoftcomSupportAutomation/2.13.4`, calculado pela aplicação. |
-| Tag Git | `v2.13.4`, apontando para o commit que foi compilado e validado. |
-| Arquivo para o cliente | `CentralAutomação(2.13.4).exe`, gerado em `dist/` e anexado ao GitHub Release correspondente. |
+| AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.5.0` neste release. |
+| User-Agent | `SoftcomSupportAutomation/2.13.5`, calculado pela aplicação. |
+| Tag Git | `v2.13.5`, apontando para o commit que foi compilado e validado. |
+| Arquivo para o cliente | `CentralAutomação(2.13.5).exe`, gerado em `dist/` e anexado ao GitHub Release correspondente. |
 
 Para uma nova versão:
 
@@ -317,7 +319,7 @@ O primeiro testa o EXE sozinho com o nome oficial em uma pasta Unicode com espa�
 
 O teste de EXE isolado também verifica os perfis personalizado/legado do remoto e usa janelas WinForms artificiais para validar o aviso Avalonia e o isolamento por PID. Os hosts de teste são compilados em uma pasta temporária e encerrados ao terminar; não executam o PDV nem instalam serviços reais.
 
-Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.4](docs/VALIDACAO-v2.13.4.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
+Este README é a documentação canônica. A [avaliação do relatório e o plano de implementação](docs/PLANO_IMPLEMENTACAO.md) registram as melhorias e sua ordem sugerida. Os resultados e limites desta entrega estão em [VALIDACAO-v2.13.5](docs/VALIDACAO-v2.13.5.md). Abrir ou integrar o PR não publica uma release; a publicação exige o envio da tag correspondente.
 
 ## Observações de segurança
 
