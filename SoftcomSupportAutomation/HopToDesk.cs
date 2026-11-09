@@ -15,11 +15,14 @@ namespace SoftcomSupportAutomation
 {
     internal sealed partial class SupportForm
     {
-        // Instalador personalizado gerado pelo Client Builder oficial do HopToDesk.
-        private const string HopToDeskDownloadUrl = "https://dashboard.hoptodesk.com/downloads/custom-builds/6586/softhecomremoto.exe";
+        private const string RemoteDisplayName = "Softhecom Remoto";
+        private const string RemoteAppName = "SofthecomRemoto";
+        // Arquivo original assinado, gerado pelo Client Builder oficial do HopToDesk.
+        private const string HopToDeskDownloadUrl = "https://github.com/vinnivii/CopiadorPdv/releases/download/softhecom-remoto-v1.46.80/softhecomremoto-install.exe";
         private const string HopToDeskPublisher = "Begonia Holdings LLC";
-        private const string HopToDeskFolder = @"C:\Softcom\ResetCaixa\HopToDesk";
-        private const string HopToDeskServiceName = "HopToDesk";
+        private const string HopToDeskFolder = @"C:\Softcom\ResetCaixa\SofthecomRemoto";
+        private const string HopToDeskServiceName = RemoteAppName;
+        private static readonly string[] RemoteAppNames = { RemoteAppName, "HopToDesk" };
 
         private void HopToDeskButton_Click(object sender, EventArgs e)
         {
@@ -51,7 +54,7 @@ namespace SoftcomSupportAutomation
             {
                 if (password != null) Array.Clear(password, 0, password.Length);
                 FinishAutomation();
-                MessageBox.Show(this, "Não foi possível iniciar a rotina do HopToDesk. Tente novamente.",
+                MessageBox.Show(this, "Não foi possível iniciar a rotina do Softhecom Remoto. Tente novamente.",
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -73,21 +76,21 @@ namespace SoftcomSupportAutomation
                 Directory.CreateDirectory(runFolder);
                 logFile = Path.Combine(runFolder, "processo.log");
                 File.WriteAllText(logFile, string.Empty, new UTF8Encoding(true));
-                WriteLog("Início: instalação do HopToDesk. Privilégio administrativo confirmado.");
+                WriteLog("Início: instalação do Softhecom Remoto. Privilégio administrativo confirmado.");
                 ThrowIfCancellationRequested();
                 string[] candidates = GetHopToDeskExecutableCandidates(out existingInstallation);
                 foreach (string candidate in candidates.Where(File.Exists))
                 {
                     existingInstallation = true;
-                    WriteLog("HopToDesk encontrado em: " + candidate);
+                    WriteLog("Instalação de acesso remoto encontrada em: " + candidate);
                 }
                 if (existingInstallation)
                 {
                     WriteLog("Instalação existente detectada. Aguardando escolha do técnico para reinstalar/atualizar.");
                     bool reinstall = (bool)Invoke((Func<bool>)(() => !stopRequested &&
                         MessageBox.Show(this,
-                            "O HopToDesk já está instalado ou possui registro de instalação.\r\n\r\n" +
-                            "Deseja reinstalar/atualizar usando o instalador oficial?\r\n" +
+                            "O Softhecom Remoto ou uma instalação anterior já possui registro no Windows.\r\n\r\n" +
+                            "Deseja instalar/atualizar o Softhecom Remoto?\r\n" +
                             (password != null
                                 ? "A senha permanente será substituída pela informada nesta execução."
                                 : "A Central não alterará senhas ou configurações de acesso."),
@@ -100,15 +103,16 @@ namespace SoftcomSupportAutomation
                         return;
                     }
                 }
-                else WriteLog("HopToDesk não instalado. Será feita uma instalação nova.");
+                else WriteLog("Softhecom Remoto não instalado. Será feita uma instalação nova.");
 
                 stage = "download do instalador";
-                installerPath = Path.Combine(HopToDeskFolder, "HopToDesk.exe");
+                installerPath = Path.Combine(HopToDeskFolder, "softhecomremoto-install.exe");
                 partialPath = installerPath + ".partial";
                 // Nunca reutiliza uma saída antiga, mesmo depois de uma falha ou interrupção.
                 if (File.Exists(installerPath)) File.Delete(installerPath);
-                WriteLog("Baixando instalador oficial do HopToDesk.");
-                DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, AutomationUserAgent);
+                WriteLog("Baixando instalador do Softhecom Remoto pelo GitHub Releases.");
+                RunTimedPhase("Download do Softhecom Remoto", () =>
+                    DownloadFileWithCancellation(HopToDeskDownloadUrl, partialPath, AutomationUserAgent));
                 ThrowIfCancellationRequested();
                 File.Move(partialPath, installerPath);
 
@@ -120,17 +124,18 @@ namespace SoftcomSupportAutomation
                     WriteLog("Instalador validado. Assinatura digital confiável de " + HopToDeskPublisher + ".");
                     ThrowIfCancellationRequested();
                     stage = "instalação silenciosa";
-                    WriteLog("Instalando HopToDesk com --silent-install. Aguarde a conclusão.");
+                    WriteLog("Instalando Softhecom Remoto com --silent-install. Aguarde a conclusão.");
                     installationStarted = true;
-                    RunCommand(installerPath, "--silent-install", 300000, "Instalação do HopToDesk");
+                    RunTimedPhase("Instalação do Softhecom Remoto", () =>
+                        RunCommand(installerPath, "--silent-install", 300000, "Instalação do Softhecom Remoto"));
                 }
 
                 stage = "verificação do aplicativo e do serviço";
-                WriteLog("Confirmando executável instalado e serviço HopToDesk em execução.");
-                string installedExecutable = WaitForHopToDeskInstallation(30000);
+                WriteLog("Confirmando executável instalado e serviço " + HopToDeskServiceName + " em execução.");
+                string installedExecutable = RunTimedPhase("Confirmação do serviço do Softhecom Remoto", () => WaitForHopToDeskInstallation(30000));
                 installationConfirmed = true;
-                WriteLog("HopToDesk instalado em: " + installedExecutable);
-                WriteLog("Serviço HopToDesk instalado e em execução.");
+                WriteLog("Softhecom Remoto instalado em: " + installedExecutable);
+                WriteLog("Serviço " + HopToDeskServiceName + " instalado e em execução.");
                 if (password != null)
                 {
                     stage = "configuração e verificação da senha permanente";
@@ -155,10 +160,10 @@ namespace SoftcomSupportAutomation
                     UseShellExecute = true
                 }))
                 {
-                    if (application == null) throw new InvalidOperationException("Não foi possível abrir o HopToDesk.");
+                    if (application == null) throw new InvalidOperationException("Não foi possível abrir o Softhecom Remoto.");
                 }
-                WriteLog("HopToDesk aberto para consulta do ID e teste de conexão.");
-                ShowFinal("HopToDesk instalado e serviço em execução.\r\n" +
+                WriteLog("Softhecom Remoto aberto para consulta do ID e teste de conexão.");
+                ShowFinal("Softhecom Remoto instalado e serviço em execução.\r\n" +
                     (passwordConfigured ? unattendedConfirmed
                         ? "Senha permanente configurada e acesso não supervisionado confirmado.\r\n"
                         : "Senha permanente configurada. Acesso não supervisionado não confirmado.\r\n" +
@@ -172,7 +177,7 @@ namespace SoftcomSupportAutomation
                 string state = GetHopToDeskInstallationState(existingInstallation, installationStarted, installationConfirmed);
                 state += GetHopToDeskPasswordState(passwordConfigurationStarted, passwordConfigured, unattendedConfirmed);
                 WriteLog("CANCELADO durante " + stage + ". " + state);
-                ShowFinal("Instalação do HopToDesk cancelada durante " + stage + ".\r\n" + state +
+                ShowFinal("Instalação do Softhecom Remoto cancelada durante " + stage + ".\r\n" + state +
                     "\r\nLog: " + logFile, MessageBoxIcon.Warning);
             }
             catch (Exception ex)
@@ -180,7 +185,7 @@ namespace SoftcomSupportAutomation
                 string state = GetHopToDeskInstallationState(existingInstallation, installationStarted, installationConfirmed);
                 state += GetHopToDeskPasswordState(passwordConfigurationStarted, passwordConfigured, unattendedConfirmed);
                 WriteLog("ERRO durante " + stage + ": " + ex + "\r\n" + state);
-                ShowFinal("Falha na etapa de " + stage + " do HopToDesk.\r\n" + ex.Message +
+                ShowFinal("Falha na etapa de " + stage + " do Softhecom Remoto.\r\n" + ex.Message +
                     "\r\n" + state + "\r\nLog: " + logFile, MessageBoxIcon.Error);
             }
             finally
@@ -196,9 +201,9 @@ namespace SoftcomSupportAutomation
         private static string GetHopToDeskInstallationState(bool existed, bool started, bool confirmed)
         {
             if (confirmed)
-                return "O HopToDesk está instalado e o serviço está em execução. Abra o aplicativo pelo menu Iniciar para consultar o ID.";
+                return "O Softhecom Remoto está instalado e o serviço está em execução. Abra o aplicativo pelo menu Iniciar para consultar o ID.";
             if (started)
-                return "A instalação pode ter sido alterada. Verifique HopToDesk e seu serviço no Windows e execute a rotina novamente para concluir.";
+                return "A instalação pode ter sido alterada. Verifique o Softhecom Remoto e seu serviço no Windows e execute a rotina novamente para concluir.";
             return (existed ? "A instalação existente não foi alterada." : "Nenhuma instalação foi iniciada.") +
                 " Verifique a conexão e a mensagem do erro antes de tentar novamente.";
         }
@@ -210,9 +215,9 @@ namespace SoftcomSupportAutomation
             catch (Exception ex) { WriteLog("Não foi possível remover o download descartado em " + path + ": " + ex.Message); }
         }
 
-        private static string GetHopToDeskServiceExecutable()
+        private static string GetHopToDeskServiceExecutable(string appName = HopToDeskServiceName)
         {
-            using (var service = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + HopToDeskServiceName))
+            using (var service = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + appName))
                 return service == null ? null : GetHopToDeskExecutableFromCommand(service.GetValue("ImagePath") as string);
         }
 
@@ -233,17 +238,19 @@ namespace SoftcomSupportAutomation
         {
             var candidates = new List<string>();
             registered = false;
-            using (var service = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + HopToDeskServiceName))
-                registered = service != null;
-            candidates.Add(GetHopToDeskServiceExecutable());
+            foreach (string appName in RemoteAppNames)
+            {
+                using (var service = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\" + appName))
+                    registered |= service != null;
+                candidates.Add(GetHopToDeskServiceExecutable(appName));
+            }
             string[] roots =
             {
                 Environment.GetEnvironmentVariable("ProgramW6432"),
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
             };
-            foreach (string root in roots.Where(r => !string.IsNullOrWhiteSpace(r)))
-                candidates.Add(Path.Combine(root, "HopToDesk", "HopToDesk.exe"));
+            candidates.AddRange(GetRemoteExecutablePaths(roots));
 
             foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
             foreach (RegistryView view in GetUninstallRegistryViews())
@@ -255,17 +262,35 @@ namespace SoftcomSupportAutomation
                     foreach (string name in uninstall.GetSubKeyNames())
                     using (var entry = uninstall.OpenSubKey(name))
                     {
-                        if (entry == null || !string.Equals(entry.GetValue("DisplayName") as string,
-                            "HopToDesk", StringComparison.OrdinalIgnoreCase)) continue;
+                        string appName = entry == null ? null : GetRemoteAppName(entry.GetValue("DisplayName") as string);
+                        if (appName == null) continue;
                         registered = true;
                         string location = entry.GetValue("InstallLocation") as string;
                         if (!string.IsNullOrWhiteSpace(location))
-                            candidates.Add(Path.Combine(Environment.ExpandEnvironmentVariables(location.Trim('"')), "HopToDesk.exe"));
+                            candidates.Add(Path.Combine(Environment.ExpandEnvironmentVariables(location.Trim('"')), appName + ".exe"));
                         candidates.Add(GetHopToDeskExecutableFromCommand(entry.GetValue("DisplayIcon") as string));
                     }
                 }
             }
             return candidates.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+
+        private static string GetRemoteAppName(string displayName)
+        {
+            string name = (displayName ?? string.Empty).Replace(" ", string.Empty);
+            return RemoteAppNames.FirstOrDefault(appName => string.Equals(appName, name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static string[] GetRemoteExecutablePaths(string[] roots)
+        {
+            return roots.Where(root => !string.IsNullOrWhiteSpace(root))
+                .SelectMany(root => RemoteAppNames.Select(appName => Path.Combine(root, appName, appName + ".exe")))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+
+        private static string GetRemoteConfigPath(string roamingFolder, string appName, string suffix)
+        {
+            return Path.Combine(roamingFolder, appName, "config", appName + suffix + ".toml");
         }
 
         private string WaitForHopToDeskInstallation(int timeoutMilliseconds)
@@ -285,7 +310,8 @@ namespace SoftcomSupportAutomation
                 }
                 SleepWithCancellation(500);
             }
-            throw new InvalidOperationException("O instalador terminou, mas não foi possível confirmar o executável e o serviço HopToDesk em execução.");
+            throw new InvalidOperationException("O instalador terminou, mas não foi possível confirmar o executável e o serviço " +
+                HopToDeskServiceName + " em execução. Uma instalação anterior de outro perfil não confirma esta instalação.");
         }
 
         private void ValidateHopToDeskInstaller(string path)

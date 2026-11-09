@@ -1,25 +1,30 @@
-param([string]$ExecutablePath)
+﻿param([string]$ExecutablePath)
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path $PSScriptRoot -Parent
-if (!$ExecutablePath) { $ExecutablePath = Join-Path $repository 'SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe' }
+[xml]$project = Get-Content -LiteralPath (Join-Path $repository 'SoftcomSupportAutomation\SoftcomSupportAutomation.csproj') -Raw -Encoding UTF8
+$version = [string]$project.Project.PropertyGroup.Version
+$fileName = "CentralAutomação($version).exe"
+if (!$ExecutablePath) { $ExecutablePath = Join-Path $repository (Join-Path 'dist' $fileName) }
+if (!(Test-Path -LiteralPath $ExecutablePath -PathType Leaf)) { throw 'EXE ausente. Execute scripts\Build-Distribution.ps1 antes deste teste.' }
 Add-Type -AssemblyName System.Windows.Forms,System.Drawing,System.IO.Compression
-$testRoot = Join-Path $env:TEMP ('CopiadorPdv-tests-' + [guid]::NewGuid().ToString('N'))
-$appRoot = Join-Path $testRoot 'app'
+$testRoot = Join-Path $env:TEMP ('CopiadorPdv testes (portátil) ' + [guid]::NewGuid().ToString('N'))
+$appRoot = Join-Path $testRoot 'aplicação (EXE isolado)'
 $dataRoot = Join-Path $testRoot 'data'
 $null = New-Item -ItemType Directory -Path $appRoot,$dataRoot
-$exe = Join-Path $appRoot 'ResetadorDePdvV2.exe'
+$exe = Join-Path $appRoot $fileName
 Copy-Item -LiteralPath $ExecutablePath -Destination $exe
+if ((Get-FileHash -LiteralPath $ExecutablePath -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash) { throw 'SHA-256 divergente na copia isolada.' }
 $assembly = [Reflection.Assembly]::LoadFile($exe)
 $type = $assembly.GetType('SoftcomSupportAutomation.SupportForm',$true)
 $flags = [Reflection.BindingFlags]'Instance,NonPublic'
 $statics = [Reflection.BindingFlags]'Static,NonPublic'
-[xml]$project = Get-Content -LiteralPath (Join-Path $repository 'SoftcomSupportAutomation\SoftcomSupportAutomation.csproj')
-$version = [string]$project.Project.PropertyGroup.Version
 if ($assembly.GetName().Version.ToString() -ne ($version+'.0')) { throw 'AssemblyVersion divergente' }
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($exe).FileVersion -ne ($version+'.0')) { throw 'FileVersion divergente' }
 if ($type.GetField('ApplicationVersion',$statics).GetValue($null) -ne $version) { throw 'Versao visual divergente' }
 if ($type.GetField('AutomationUserAgent',$statics).GetValue($null) -ne ('SoftcomSupportAutomation/'+$version)) { throw 'User-Agent divergente' }
-if (@(Get-ChildItem -LiteralPath $appRoot -File).Count -ne 1) { throw 'EXE nao esta isolado' }
+if (@(Get-ChildItem -LiteralPath $appRoot -Force).Count -ne 1 -or
+    (Get-Item -LiteralPath $exe).Name -cne $fileName) { throw 'EXE nao esta isolado com o nome oficial' }
 $form = [Activator]::CreateInstance($type,$true)
 $null = $form.Handle
 $type.GetField('logFile',$flags).SetValue($form,(Join-Path $dataRoot 'test.log'))
@@ -58,6 +63,15 @@ try {
     Write-Output 'PASS: EXE isolado, metadados/UI/User-Agent, recursos, ZIP, RAR e cancelamento de extracao.'
     Add-Type -Path (Join-Path $PSScriptRoot 'DownloadTests.cs') -ReferencedAssemblies System,System.Core,System.Windows.Forms
     [DownloadTests]::Run($form,$dataRoot)
+    Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,WindowsBase
+    $fixtureExe = Join-Path $dataRoot 'Softshop.exe'
+    Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\DialogHost.cs') -OutputAssembly $fixtureExe -OutputType WindowsApplication -ReferencedAssemblies System,System.Windows.Forms,System.Drawing
+    $automationReferences = @('System','System.Core','System.Windows.Forms',
+        [Windows.Automation.AutomationElement].Assembly.Location,
+        [Windows.Automation.ControlType].Assembly.Location,
+        [Windows.Rect].Assembly.Location)
+    Add-Type -Path (Join-Path $PSScriptRoot 'AutomationTests.cs') -ReferencedAssemblies $automationReferences
+    [AutomationTests]::Run($form,$dataRoot,$fixtureExe)
     [Windows.Forms.Application]::DoEvents()
     Write-Output 'LIMITACAO: nenhum instalador, senha ou servico real foi alterado; homologacao de cliente continua separada.'
     Write-Output ('Resultados locais: '+$testRoot)

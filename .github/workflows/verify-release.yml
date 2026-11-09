@@ -14,6 +14,10 @@ jobs:
   verify:
     runs-on: windows-latest
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.distribution.outputs.version }}
+      file_name: ${{ steps.distribution.outputs.file_name }}
+      sha256: ${{ steps.distribution.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -24,7 +28,7 @@ jobs:
       - name: Conferir tag e versao
         shell: powershell
         run: |
-          [xml]$project = Get-Content SoftcomSupportAutomation/SoftcomSupportAutomation.csproj
+          [xml]$project = Get-Content SoftcomSupportAutomation/SoftcomSupportAutomation.csproj -Raw -Encoding UTF8
           $version = [string]$project.Project.PropertyGroup.Version
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version deve ser MAJOR.MINOR.PATCH' }
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
@@ -32,16 +36,27 @@ jobs:
           }
       - name: Build Release
         run: dotnet build .\SoftcomSupportAutomation\SoftcomSupportAutomation.csproj -c Release
-      - name: Verificar EXE isolado e downloads
+      - name: Verificar EXE isolado, downloads e dialogos
         shell: powershell
-        run: .\tests\Verify-Portable.ps1
+        run: .\tests\Verify-Portable.ps1 -ExecutablePath .\SoftcomSupportAutomation\bin\Release\net48\ResetadorDePdvV2.exe
       - name: Verificar fluxos com operacoes simuladas
         shell: powershell
         run: .\tests\Verify-Workflow.ps1
+      - name: Preparar copia de distribuicao validada
+        id: distribution
+        shell: powershell
+        run: |
+          $prepared = .\scripts\Build-Distribution.ps1 -SkipBuild
+          $lines = @("version=$($prepared.Version)", "file_name=$($prepared.FileName)", "sha256=$($prepared.Sha256)", "executable_path=$($prepared.ExecutablePath)") -join "`n"
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, $lines + "`n", [Text.UTF8Encoding]::new($false))
+          Write-Host "SHA-256 origem/copia: $($prepared.Sha256)"
+      - name: Conferir distribuicao e caminhos Unicode
+        shell: powershell
+        run: .\tests\Verify-Distribution.ps1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: ResetadorDePdvV2
-          path: SoftcomSupportAutomation/bin/Release/net48/ResetadorDePdvV2.exe
+          name: CentralAutomacao-${{ steps.distribution.outputs.version }}
+          path: ${{ steps.distribution.outputs.executable_path }}
           if-no-files-found: error
 
   release:
@@ -53,17 +68,21 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: ResetadorDePdvV2
+          name: CentralAutomacao-${{ needs.verify.outputs.version }}
           path: release
       - name: Publicar EXE validado
+        shell: powershell
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_COMMIT: ${{ github.sha }}
-        run: >-
-          gh release create "$env:RELEASE_TAG" "release/ResetadorDePdvV2.exe"
-          --verify-tag --target "$env:RELEASE_COMMIT"
-          --title "Central de Automações Softcom $env:RELEASE_TAG"
-          --notes "Build Release e testes automatizados de EXE isolado, ZIP/RAR, download, cancelamento e fluxos simulados aprovados. Sem nova homologação de instalação real, Windows x86 ou elevação com outro usuário nesta versão."
-          --generate-notes
+          RELEASE_FILE_NAME: ${{ needs.verify.outputs.file_name }}
+          RELEASE_FILE_SHA256: ${{ needs.verify.outputs.sha256 }}
+        run: |
+          $file = Join-Path (Join-Path $PWD.Path 'release') $env:RELEASE_FILE_NAME
+          $files = @(Get-ChildItem -LiteralPath 'release' -Force)
+          if ($files.Count -ne 1 -or $files[0].PSIsContainer -or $files[0].Name -cne $env:RELEASE_FILE_NAME) { throw 'Artefato deve conter somente o EXE de distribuicao.' }
+          if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $env:RELEASE_FILE_SHA256) { throw 'SHA-256 diferente do EXE validado.' }
+          gh release create "$env:RELEASE_TAG" "$file" --verify-tag --target "$env:RELEASE_COMMIT" --title "Central de Automacoes Softcom $env:RELEASE_TAG" --notes "EXE de distribuicao com mesmo SHA-256 do build Release; testes de portabilidade, ZIP/RAR, download, cancelamento, dialogos e fluxos simulados aprovados. Homologacao real e limites documentados no repositorio." --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
