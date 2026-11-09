@@ -1446,7 +1446,14 @@ namespace SoftcomSupportAutomation
                 if (configuration != null) return configuration;
                 // Uma janela modal deve ser resolvida antes de enviar qualquer tecla ao login.
                 if (!loginWindow.Current.IsEnabled || loginWindow.Current.IsOffscreen)
-                    throw new InvalidOperationException("A tela de login está indisponível ou bloqueada por outra janela do Softshop.");
+                {
+                    WriteLog("Login bloqueado; aguardando as Configurações sem reenviar F11.");
+                    configuration = WaitForConfigurationWindow(processId, configurationTimeoutSeconds);
+                    if (configuration != null) return configuration;
+                    LogSoftshopWindowDiagnostics(processId);
+                    throw new InvalidOperationException("A tela de login está indisponível ou bloqueada por outra janela do Softshop. " +
+                        "Confira o aviso aberto no PDV antes de tentar novamente; nenhuma tecla foi enviada à janela bloqueada.");
+                }
 
                 WriteLog("Preenchendo senha de suporte.");
                 ActivateWindow(new IntPtr(loginWindow.Current.NativeWindowHandle));
@@ -1470,6 +1477,7 @@ namespace SoftcomSupportAutomation
                 if (attempt == 1)
                     WriteLog("Configurações ainda não apareceram; verificando o login antes de repetir F11.");
             }
+            LogSoftshopWindowDiagnostics(processId);
             throw new InvalidOperationException("O painel de Configurações não apareceu após duas tentativas de F11.");
         }
 
@@ -1495,20 +1503,67 @@ namespace SoftcomSupportAutomation
 
         private AutomationElement WaitForConfigurationWindow(int softshopProcessId, int timeoutSeconds)
         {
-            return WaitForWindow(timeoutSeconds, element => IsConfigurationWindow(element, softshopProcessId));
+            var timeout = Stopwatch.StartNew();
+            do
+            {
+                ThrowIfCancellationRequested();
+                AutomationElement configuration = FindConfigurationWindow(softshopProcessId);
+                if (configuration != null) return configuration;
+                SleepWithCancellation(500);
+            } while (timeout.Elapsed.TotalSeconds < timeoutSeconds);
+            return null;
         }
 
         private static AutomationElement FindConfigurationWindow(int softshopProcessId)
         {
-            return AutomationElement.RootElement.FindAll(TreeScope.Children, Condition.TrueCondition)
-                .Cast<AutomationElement>().FirstOrDefault(element => IsConfigurationWindow(element, softshopProcessId));
+            return GetSoftshopWindows(softshopProcessId).FirstOrDefault(element => IsConfigurationWindow(element, softshopProcessId));
+        }
+
+        private static IEnumerable<AutomationElement> GetSoftshopWindows(int softshopProcessId)
+        {
+            if (softshopProcessId <= 0) yield break;
+            foreach (AutomationElement root in AutomationElement.RootElement.FindAll(TreeScope.Children,
+                new PropertyCondition(AutomationElement.ProcessIdProperty, softshopProcessId)))
+            {
+                yield return root;
+                // Janelas modais podem ser filhas do login na árvore UIA, mesmo com o login desabilitado.
+                AutomationElementCollection ownedWindows;
+                try
+                {
+                    ownedWindows = root.FindAll(TreeScope.Descendants, new AndCondition(
+                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window),
+                        new PropertyCondition(AutomationElement.ProcessIdProperty, softshopProcessId)));
+                }
+                catch (ElementNotAvailableException) { continue; }
+                foreach (AutomationElement owned in ownedWindows) yield return owned;
+            }
+        }
+
+        private void LogSoftshopWindowDiagnostics(int processId)
+        {
+            try
+            {
+                foreach (AutomationElement window in GetSoftshopWindows(processId))
+                {
+                    try
+                    {
+                        var info = window.Current;
+                        WriteLog("Diagnóstico de janela do Softshop: PID=" + processId + ", HWND=" + info.NativeWindowHandle +
+                            ", habilitada=" + info.IsEnabled + ", fora da tela=" + info.IsOffscreen +
+                            ", tipo=" + info.ControlType.ProgrammaticName + ". Textos e valores dos controles não coletados.");
+                    }
+                    catch (ElementNotAvailableException) { }
+                }
+            }
+            catch { } // O diagnóstico não pode substituir a falha original.
         }
 
         private static bool IsConfigurationWindow(AutomationElement element, int softshopProcessId)
         {
             try
             {
-                if (element.Current.ProcessId != softshopProcessId || !element.Current.IsEnabled || element.Current.IsOffscreen) return false;
+                if (element.Current.ProcessId != softshopProcessId || element.Current.ControlType != ControlType.Window ||
+                    !element.Current.IsEnabled || element.Current.IsOffscreen || FindAvaloniaOkButton(element) != null) return false;
                 string name = element.Current.Name ?? string.Empty;
                 if (name.IndexOf("Configura", StringComparison.OrdinalIgnoreCase) >= 0) return true;
                 return element.FindAll(TreeScope.Descendants,
@@ -2869,8 +2924,7 @@ namespace SoftcomSupportAutomation
             if (stopRequested || softshopProcessId <= 0) return false;
             try
             {
-                foreach (AutomationElement window in AutomationElement.RootElement.FindAll(TreeScope.Children,
-                    new PropertyCondition(AutomationElement.ProcessIdProperty, softshopProcessId)))
+                foreach (AutomationElement window in GetSoftshopWindows(softshopProcessId))
                 {
                     if (!window.Current.IsEnabled) continue;
                     AutomationElement okButton = FindAvaloniaOkButton(window);
@@ -2901,7 +2955,7 @@ namespace SoftcomSupportAutomation
         {
             try
             {
-                var windows = AutomationElement.RootElement.FindAll(TreeScope.Children, Condition.TrueCondition);
+                var windows = GetSoftshopWindows(softshopProcessId);
                 foreach (AutomationElement window in windows)
                 {
                     if (window.Current.ProcessId != softshopProcessId ||

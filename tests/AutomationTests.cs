@@ -53,6 +53,8 @@ public static class AutomationTests
             ((CheckBox)type.GetField("configureHopToDeskPasswordCheckBox", Instances).GetValue(form)).Checked,
             "Senha inicialmente vazia, oculta e habilitada por padrao");
 
+        VerifyModalConfiguration(form, folder, fixtureExe);
+
         var dismiss = type.GetMethod("DismissAvaloniaDialog", Instances);
         var stop = type.GetField("stopRequested", Instances);
         foreach (string scenario in new[] { "launch", "login", "normal", "mixed", "title", "edit", "unrelated", "no-ok", "disabled", "hidden", "other-process", "cancel" })
@@ -118,6 +120,71 @@ public static class AutomationTests
                     type.GetField("activeSoftshopProcessId", Instances).SetValue(form, 0);
                     if (!process.HasExited) process.Kill();
                     Check(process.WaitForExit(3000), "Processo de fixture encerrado: " + scenario);
+                }
+            }
+        }
+    }
+
+    private static void VerifyModalConfiguration(object form, string folder, string fixtureExe)
+    {
+        Type type = form.GetType();
+        var open = type.GetMethod("OpenConfigurationFromLogin", Instances);
+        var stop = type.GetField("stopRequested", Instances);
+        foreach (string scenario in new[] { "modal-config", "modal-untitled", "modal-slow", "modal-unknown", "modal-avalonia", "modal-rpc", "modal-cancel" })
+        {
+            string marker = Path.Combine(folder, scenario + ".txt");
+            using (var process = Process.Start(new ProcessStartInfo(fixtureExe, scenario + " \"" + marker + "\"") { UseShellExecute = false }))
+            {
+                try
+                {
+                    type.GetField("activeSoftshopProcessId", Instances).SetValue(form, process.Id);
+                    var login = (AutomationElement)type.GetMethod("WaitForSoftshopWindow", Instances).Invoke(form, new object[] { 5 });
+                    Check(login != null, "Login da fixture modal: " + scenario);
+                    File.WriteAllText(marker + ".show", "show");
+                    var modalReady = Stopwatch.StartNew();
+                    while (login.Current.IsEnabled && modalReady.ElapsedMilliseconds < 5000) Thread.Sleep(25);
+                    Check(!login.Current.IsEnabled, "Login bloqueado pela janela modal: " + scenario);
+                    bool expected = scenario == "modal-config" || scenario == "modal-untitled" || scenario == "modal-slow";
+                    AutomationElement config = null;
+                    Exception failure = null;
+                    var elapsed = Stopwatch.StartNew();
+                    Thread cancellation = null;
+                    if (scenario == "modal-cancel")
+                    {
+                        cancellation = new Thread(() => { Thread.Sleep(150); stop.SetValue(form, true); });
+                        cancellation.Start();
+                    }
+                    try { config = (AutomationElement)open.Invoke(form, new object[] { login, 1, expected ? 10 : 1 }); }
+                    catch (TargetInvocationException ex) { failure = ex.InnerException; }
+                    finally { if (cancellation != null) cancellation.Join(); }
+                    Check(expected ? config != null && config.Current.ProcessId == process.Id :
+                        config == null && (scenario == "modal-cancel" ? failure is OperationCanceledException && elapsed.ElapsedMilliseconds < 1500 :
+                            failure is InvalidOperationException), "Configuracao modal: " + scenario +
+                        (failure == null ? "" : " (" + failure.Message + ")"));
+                    Check(!File.Exists(marker), "F11 nao enviado sobre login bloqueado: " + scenario);
+                    if (expected)
+                    {
+                        var wrongPid = type.GetMethod("WaitForConfigurationWindow", Instances).Invoke(form,
+                            new object[] { Process.GetCurrentProcess().Id, 1 });
+                        Check(wrongPid == null, "Configuracoes de outro PID rejeitadas: " + scenario);
+                    }
+                    else if (scenario == "modal-avalonia" || scenario == "modal-rpc")
+                    {
+                        bool dismissed = scenario == "modal-avalonia" ?
+                            (bool)type.GetMethod("DismissAvaloniaDialog", Instances).Invoke(form, new object[] { process.Id }) :
+                            (bool)type.GetMethod("DismissRpcUnavailableDialog", Statics).Invoke(null, new object[] { process.Id });
+                        var clicked = Stopwatch.StartNew();
+                        while (!File.Exists(marker + ".ok") && clicked.ElapsedMilliseconds < 3000) Thread.Sleep(25);
+                        Check(dismissed && File.Exists(marker + ".ok"), "Monitor encontra aviso modal conhecido: " + scenario);
+                    }
+                    else Check(!File.Exists(marker + ".ok"), "Aviso desconhecido/cancelado nao fechado: " + scenario);
+                }
+                finally
+                {
+                    stop.SetValue(form, false);
+                    type.GetField("activeSoftshopProcessId", Instances).SetValue(form, 0);
+                    if (!process.HasExited) process.Kill();
+                    Check(process.WaitForExit(3000), "Processo modal encerrado: " + scenario);
                 }
             }
         }
