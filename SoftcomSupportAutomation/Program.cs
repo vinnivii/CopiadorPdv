@@ -1160,6 +1160,7 @@ namespace SoftcomSupportAutomation
             var workflowElapsed = Stopwatch.StartNew();
             string workflowOutcome = "interrompido";
             Task<string> pdvPackageTask = null;
+            Task<string> dllPackageTask = null;
             bool fullReset = selectedPdvAutomationMode == PdvAutomationMode.FullReset;
             bool cleanReinstall = selectedPdvAutomationMode == PdvAutomationMode.CleanReinstall;
             bool configurationPrints = selectedPdvAutomationMode == PdvAutomationMode.ConfigurationPrints;
@@ -1186,6 +1187,12 @@ namespace SoftcomSupportAutomation
                         return preparedMsi;
                     });
                     WriteLog("Download do PDV executando em paralelo.");
+                    if (updateDllsRequested)
+                    {
+                        WriteLog("Iniciando download antecipado de SetupSoftcomDLLs em paralelo.");
+                        dllPackageTask = Task.Run(() => RunTimedPhase("Preparação do pacote de DLLs",
+                            () => PrepareDllPackage(packageCancellation.Token)));
+                    }
                 }
                 WriteLog("Início do processo. Pasta do log: " + runFolder);
                 WriteLog(configurationPrints
@@ -1256,6 +1263,7 @@ namespace SoftcomSupportAutomation
                     return;
                 }
                 string msiPath;
+                string dllMsiPath = null;
                 if (fullReset)
                 {
                     if (!string.IsNullOrWhiteSpace(existingPdvExecutable))
@@ -1284,13 +1292,16 @@ namespace SoftcomSupportAutomation
                         WriteLog("Softshop.exe não encontrado em nenhum caminho compatível com a arquitetura do Windows.");
                         WriteLog("Modo de instalação nova ativado: captura, desinstalação e renomeação de pastas serão ignoradas.");
                     }
-                    msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
+                    msiPath = WaitForPreparedPackage(pdvPackageTask,
                         existingPdvExecutable != null
                             ? "Captura concluída. Aguardando preparação do pacote do PDV."
                             : "Aguardando preparação do pacote do PDV.",
                         existingPdvExecutable != null
                             ? "Não foi possível preparar o novo pacote do PDV. A instalação atual foi mantida."
                             : "Não foi possível preparar o pacote do PDV para a instalação nova.");
+                    if (dllPackageTask != null)
+                        dllMsiPath = WaitForPreparedPackage(dllPackageTask, "Aguardando preparação antecipada de SetupSoftcomDLLs.",
+                            "Não foi possível preparar SetupSoftcomDLLs. A instalação atual do PDV não foi removida.");
                     if (existingPdvExecutable != null)
                     {
                         ThrowIfCancellationRequested();
@@ -1301,7 +1312,7 @@ namespace SoftcomSupportAutomation
                         RunTimedPhase("Preservação das pastas", () => BackupFolders(existingPdvExecutables.Select(Path.GetDirectoryName), true));
                     }
                     ThrowIfCancellationRequested();
-                    if (updateDllsRequested) RunTimedPhase("Atualização de DLLs", UpdateSoftcomDlls);
+                    if (updateDllsRequested) RunTimedPhase("Atualização de DLLs", () => UpdateSoftcomDlls(dllMsiPath));
                     else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
                 }
                 else
@@ -1317,9 +1328,14 @@ namespace SoftcomSupportAutomation
                     ThrowIfCancellationRequested();
                     RunTimedPhase("Preservação das pastas", () => BackupFolders(existingPdvDirectories, false));
                     ThrowIfCancellationRequested();
-                    if (updateDllsRequested) RunTimedPhase("Atualização de DLLs", UpdateSoftcomDlls);
+                    if (updateDllsRequested)
+                    {
+                        dllMsiPath = WaitForPreparedPackage(dllPackageTask, "Aguardando preparação antecipada de SetupSoftcomDLLs.",
+                            "Não foi possível preparar SetupSoftcomDLLs após a desinstalação do PDV. Os backups foram preservados.");
+                        RunTimedPhase("Atualização de DLLs", () => UpdateSoftcomDlls(dllMsiPath));
+                    }
                     else WriteLog("Atualização de SetupSoftcomDLLs não selecionada.");
-                    msiPath = WaitForPreparedPdvPackage(pdvPackageTask,
+                    msiPath = WaitForPreparedPackage(pdvPackageTask,
                         "Aguardando preparação do pacote do PDV após a desinstalação.",
                         "Não foi possível preparar o novo pacote do PDV após a desinstalação. Verifique o log e tente novamente.");
                 }
@@ -1364,6 +1380,10 @@ namespace SoftcomSupportAutomation
                 {
                     // A próxima execução só pode começar após o download/extração anterior encerrar.
                     try { pdvPackageTask.GetAwaiter().GetResult(); } catch { }
+                }
+                if (dllPackageTask != null)
+                {
+                    try { dllPackageTask.GetAwaiter().GetResult(); } catch { }
                 }
                 if (dialogWatcher != null && dialogWatcher.IsAlive)
                     dialogWatcher.Join();
@@ -2460,13 +2480,16 @@ namespace SoftcomSupportAutomation
                     if (string.IsNullOrWhiteSpace(id)) throw new InvalidOperationException("Não foi possível obter o ProductCode de " + entry.DisplayName);
                     command = "msiexec.exe /x " + id + " /qn /norestart";
                 }
-                RunCommand("cmd.exe", "/c " + command, 600000, "desinstalação");
+                RetryWhenInstallerBusy(remaining => RunCommand("cmd.exe", "/c " + command, remaining, "desinstalação", true),
+                    600000, "desinstalação do PDV");
             }
         }
 
-        private void UpdateSoftcomDlls()
+        private void UpdateSoftcomDlls(string msiPath)
         {
             ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(msiPath) || !File.Exists(msiPath) || new FileInfo(msiPath).Length == 0)
+                throw new InvalidOperationException("O MSI preparado de SetupSoftcomDLLs não está disponível; nenhuma DLL foi desinstalada.");
             WriteLog("Atualização opcional de SetupSoftcomDLLs iniciada.");
             var installedEntries = GetSetupDllEntries();
             if (installedEntries.Length == 0)
@@ -2488,23 +2511,12 @@ namespace SoftcomSupportAutomation
                             throw new InvalidOperationException("Não foi possível obter o ProductCode de " + entry.DisplayName + ".");
                         command = "msiexec.exe /x " + productCode + " /qn /norestart";
                     }
-                    RunCommand("cmd.exe", "/c " + command, 600000, "desinstalação de SetupSoftcomDLLs");
+                    RetryWhenInstallerBusy(remaining => RunCommand("cmd.exe", "/c " + command, remaining,
+                        "desinstalação de SetupSoftcomDLLs", true), 600000, "desinstalação de SetupSoftcomDLLs");
                 }
             }
 
-            string dllFolder = @"C:\Softcom\ResetCaixa\DLLs";
-            Directory.CreateDirectory(dllFolder);
-            string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
-            string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
-            WriteLog("Baixando SetupSoftcomDLLs mais recente.");
-            DownloadFileWithCancellation(DllDownloadUrl, rarPath, AutomationUserAgent);
-            if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
-                throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
-            WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
-            ExtractMsiFromArchive(rarPath, msiPath);
-            if (!File.Exists(msiPath))
-                throw new FileNotFoundException("SetupSoftcomDLLs.msi não foi encontrado dentro do RAR.");
-
+            WriteLog("Reutilizando MSI de SetupSoftcomDLLs preparado antecipadamente.");
             int exitCode = InstallSetupDllMsi(msiPath);
             bool registered = WaitForSetupDllRegistration(15);
             if (!registered)
@@ -2513,6 +2525,41 @@ namespace SoftcomSupportAutomation
                 WriteLog("Aviso: o instalador de SetupSoftcomDLLs retornou " + exitCode + ", mas o produto ficou instalado; continuando conforme configurado.");
             else
                 WriteLog("SetupSoftcomDLLs instalado e confirmado em Programas e Recursos.");
+        }
+
+        private string PrepareDllPackage(CancellationToken cancellationToken)
+        {
+            ThrowIfCancellationRequested(cancellationToken);
+            string dllFolder = @"C:\Softcom\ResetCaixa\DLLs";
+            Directory.CreateDirectory(dllFolder);
+            string rarPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.rar");
+            string msiPath = Path.Combine(dllFolder, "SetupSoftcomDLLs.msi");
+            foreach (string path in new[] { rarPath, msiPath })
+            {
+                ThrowIfCancellationRequested(cancellationToken);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            try
+            {
+                WriteLog("Baixando SetupSoftcomDLLs mais recente.");
+                DownloadFileWithCancellation(DllDownloadUrl, rarPath, AutomationUserAgent, cancellationToken);
+                ThrowIfCancellationRequested(cancellationToken);
+                if (!File.Exists(rarPath) || new FileInfo(rarPath).Length == 0)
+                    throw new InvalidOperationException("O download de SetupSoftcomDLLs retornou um arquivo vazio.");
+                WriteLog("Download de SetupSoftcomDLLs concluído: " + new FileInfo(rarPath).Length + " bytes.");
+                ExtractMsiFromArchive(rarPath, msiPath, cancellationToken);
+                ThrowIfCancellationRequested(cancellationToken);
+                if (!File.Exists(msiPath) || new FileInfo(msiPath).Length == 0)
+                    throw new InvalidOperationException("SetupSoftcomDLLs.msi não foi extraído ou está vazio.");
+                WriteLog("Pacote de SetupSoftcomDLLs preparado para instalação.");
+                return msiPath;
+            }
+            catch
+            {
+                try { if (File.Exists(msiPath)) File.Delete(msiPath); } catch { }
+                try { if (File.Exists(rarPath)) File.Delete(rarPath); } catch { }
+                throw;
+            }
         }
 
         private static UninstallEntry[] GetSetupDllEntries()
@@ -2551,34 +2598,37 @@ namespace SoftcomSupportAutomation
         {
             WriteLog("Instalando SetupSoftcomDLLs.");
             ThrowIfCancellationRequested();
-            using (var process = Process.Start(new ProcessStartInfo("msiexec.exe",
-                "/i \"" + msiPath + "\" /qb! /norestart REBOOT=ReallySuppress")
-            { UseShellExecute = false, CreateNoWindow = false }))
+            return RetryWhenInstallerBusy(remaining =>
             {
-                if (process == null) throw new InvalidOperationException("Não foi possível iniciar o instalador de SetupSoftcomDLLs.");
-                var stopwatch = Stopwatch.StartNew();
-                bool ignoreLogged = false;
-                while (!process.HasExited && stopwatch.ElapsedMilliseconds < 600000)
+                using (var process = Process.Start(new ProcessStartInfo("msiexec.exe",
+                    "/i \"" + msiPath + "\" /qb! /norestart REBOOT=ReallySuppress")
+                { UseShellExecute = false, CreateNoWindow = false }))
                 {
-                    if (stopRequested)
+                    if (process == null) throw new InvalidOperationException("Não foi possível iniciar o instalador de SetupSoftcomDLLs.");
+                    var stopwatch = Stopwatch.StartNew();
+                    bool ignoreLogged = false;
+                    while (!process.HasExited && stopwatch.ElapsedMilliseconds < remaining)
+                    {
+                        if (stopRequested)
+                        {
+                            TryTerminateProcessTree(process);
+                            throw new OperationCanceledException("Instalação de SetupSoftcomDLLs cancelada.");
+                        }
+                        if (DismissDllInstallWarningDialog() && !ignoreLogged)
+                        {
+                            ignoreLogged = true;
+                            WriteLog("Aviso de instalação de DLL ignorado automaticamente; instalação continuará.");
+                        }
+                        Thread.Sleep(250);
+                    }
+                    if (!process.HasExited)
                     {
                         TryTerminateProcessTree(process);
-                        throw new OperationCanceledException("Instalação de SetupSoftcomDLLs cancelada.");
+                        throw new TimeoutException("Tempo limite excedido durante a instalação de SetupSoftcomDLLs.");
                     }
-                    if (DismissDllInstallWarningDialog() && !ignoreLogged)
-                    {
-                        ignoreLogged = true;
-                        WriteLog("Aviso de instalação de DLL ignorado automaticamente; instalação continuará.");
-                    }
-                    Thread.Sleep(250);
+                    return process.ExitCode;
                 }
-                if (!process.HasExited)
-                {
-                    try { process.Kill(); } catch { }
-                    throw new TimeoutException("Tempo limite excedido durante a instalação de SetupSoftcomDLLs.");
-                }
-                return process.ExitCode;
-            }
+            }, 600000, "instalação de SetupSoftcomDLLs");
         }
 
         private static bool DismissDllInstallWarningDialog()
@@ -2696,7 +2746,7 @@ namespace SoftcomSupportAutomation
             }
         }
 
-        private string WaitForPreparedPdvPackage(Task<string> packageTask, string waitingMessage, string failureMessage)
+        private string WaitForPreparedPackage(Task<string> packageTask, string waitingMessage, string failureMessage)
         {
             try
             {
@@ -2725,7 +2775,16 @@ namespace SoftcomSupportAutomation
             if (string.IsNullOrWhiteSpace(msiPath) || !File.Exists(msiPath) || new FileInfo(msiPath).Length == 0)
                 throw new InvalidOperationException("O MSI preparado não está disponível para instalação.");
             WriteLog("Instalando Softshop Caixa.");
-            RunCommand("msiexec.exe", "/i \"" + msiPath + "\" /qn /norestart", 600000, "instalação");
+            try
+            {
+                RetryWhenInstallerBusy(remaining => RunCommand("msiexec.exe", "/i \"" + msiPath + "\" /qn /norestart",
+                    remaining, "instalação do PDV", true), 600000, "instalação do PDV");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException || ex is TimeoutException)
+            {
+                throw new InvalidOperationException("Não foi possível instalar o Softshop Caixa. " + ex.Message +
+                    " O MSI preparado foi mantido em: " + msiPath + ". Os backups anteriores não foram alterados.", ex);
+            }
         }
 
         private void OpenNewInstallationAtConfiguration()
@@ -2875,7 +2934,31 @@ namespace SoftcomSupportAutomation
             }
         }
 
-        private void RunCommand(string fileName, string arguments, int timeoutMilliseconds, string action)
+        private int RetryWhenInstallerBusy(Func<int, int> attempt, int timeoutMilliseconds, string action)
+        {
+            var elapsed = Stopwatch.StartNew();
+            bool busyLogged = false;
+            while (true)
+            {
+                ThrowIfCancellationRequested();
+                int remaining = timeoutMilliseconds - (int)elapsed.ElapsedMilliseconds;
+                if (remaining <= 0)
+                    throw new TimeoutException("O Windows Installer permaneceu ocupado (código 1618) durante " + action +
+                        ". Aguarde a outra instalação terminar e tente novamente; nenhuma instalação de terceiros foi encerrada.");
+                int exitCode = attempt(remaining);
+                ThrowIfCancellationRequested();
+                if (exitCode != 1618) return exitCode;
+                if (!busyLogged)
+                {
+                    busyLogged = true;
+                    WriteLog("Outra instalação está em andamento (1618). Aguardando o Windows Installer para " + action + ".");
+                }
+                remaining = timeoutMilliseconds - (int)elapsed.ElapsedMilliseconds;
+                if (remaining > 0) SleepWithCancellation(Math.Min(1000, remaining));
+            }
+        }
+
+        private int RunCommand(string fileName, string arguments, int timeoutMilliseconds, string action, bool allowInstallerBusy = false)
         {
             ThrowIfCancellationRequested();
             using (var process = Process.Start(new ProcessStartInfo(fileName, arguments) { UseShellExecute = false, CreateNoWindow = true }))
@@ -2896,9 +2979,12 @@ namespace SoftcomSupportAutomation
                     TryTerminateProcessTree(process);
                     throw new TimeoutException("Tempo limite excedido durante " + action + ".");
                 }
+                ThrowIfCancellationRequested();
+                if (process.ExitCode == 1618 && allowInstallerBusy) return process.ExitCode;
                 if (process.ExitCode != 0 && process.ExitCode != 1641 && process.ExitCode != 3010)
                     throw new InvalidOperationException(action + " retornou o código " + process.ExitCode + ".");
                 WriteLog(action + " finalizada (código " + process.ExitCode + ").");
+                return process.ExitCode;
             }
         }
 

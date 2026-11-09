@@ -22,20 +22,27 @@ public static class AutomationTests
     {
         Type type = form.GetType();
         Func<string, string> appName = name => (string)type.GetMethod("GetRemoteAppName", Statics).Invoke(null, new object[] { name });
-        Check(appName("SofthecomRemoto") == "SofthecomRemoto" && appName("softhecom remoto") == "SofthecomRemoto" &&
+        Check(appName("SofthecomRemoto") == "SofthecomRemoto" && appName("softhecom remoto") == "Softhecom Remoto" &&
             appName("HopToDesk") == "HopToDesk" && appName("Outro produto") == null,
             "Perfis personalizado e legado reconhecidos sem aceitar outro produto");
-        Check((string)type.GetField("HopToDeskServiceName", Statics).GetRawConstantValue() == "SofthecomRemoto",
+        Check((string)type.GetField("HopToDeskServiceName", Statics).GetRawConstantValue() == "Softhecom Remoto",
             "Confirmacao posterior a instalacao exige o servico personalizado");
+        var parseCommand = type.GetMethod("GetHopToDeskExecutableFromCommand", Statics);
+        Check((string)parseCommand.Invoke(null, new object[] { "\"C:\\Program Files (x86)\\Softhecom Remoto\\Softhecom Remoto.exe\" --service" }) ==
+            @"C:\Program Files (x86)\Softhecom Remoto\Softhecom Remoto.exe" &&
+            (string)parseCommand.Invoke(null, new object[] { @"C:\Program Files\Softhecom Remoto\Softhecom Remoto.exe --service" }) ==
+            @"C:\Program Files\Softhecom Remoto\Softhecom Remoto.exe", "ImagePath com espacos, aspas e argumentos preserva o executavel");
         var roots = new[] { @"C:\Program Files", @"C:\Program Files (x86)", null, "", @"C:\Program Files" };
         var paths = (string[])type.GetMethod("GetRemoteExecutablePaths", Statics).Invoke(null, new object[] { roots });
-        Check(paths.Length == 4 && paths.Contains(@"C:\Program Files\SofthecomRemoto\SofthecomRemoto.exe") &&
+        Check(paths.Length == 6 && paths.Contains(@"C:\Program Files\Softhecom Remoto\Softhecom Remoto.exe") &&
+            paths.Contains(@"C:\Program Files (x86)\Softhecom Remoto\Softhecom Remoto.exe") &&
+            paths.Contains(@"C:\Program Files\SofthecomRemoto\SofthecomRemoto.exe") &&
             paths.Contains(@"C:\Program Files (x86)\SofthecomRemoto\SofthecomRemoto.exe") &&
             paths.Contains(@"C:\Program Files\HopToDesk\HopToDesk.exe") && paths.Contains(@"C:\Program Files (x86)\HopToDesk\HopToDesk.exe"),
             "Ambos os perfis em Program Files e Program Files (x86), sem duplicar caminhos");
         var configPath = type.GetMethod("GetRemoteConfigPath", Statics);
         var hasPassword = type.GetMethod("HasHopToDeskPermanentPassword", Statics);
-        foreach (string profile in new[] { "HopToDesk", "SofthecomRemoto" })
+        foreach (string profile in new[] { "HopToDesk", "SofthecomRemoto", "Softhecom Remoto" })
         {
             string path = (string)configPath.Invoke(null, new object[] { folder, profile, "" });
             string options = (string)configPath.Invoke(null, new object[] { folder, profile, "2" });
