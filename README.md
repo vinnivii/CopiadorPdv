@@ -5,6 +5,10 @@ Aplicação desktop para centralizar rotinas de suporte técnico da Softcom em u
 Versão atual: **2.13.6**
 Responsável: **Marcus Silva - Teresina**
 
+[Baixar Central v2.13.6 — EXE](https://github.com/vinnivii/CopiadorPdv/releases/download/v2.13.6/CentralAutomacao.2.13.6.exe) · [ZIP com nome oficial](https://github.com/vinnivii/CopiadorPdv/releases/download/v2.13.6/CentralAutomacao-2.13.6.zip) · [Notas da release](https://github.com/vinnivii/CopiadorPdv/releases/tag/v2.13.6)
+
+O ZIP contém somente `CentralAutomação(2.13.6).exe`. O GitHub normaliza acentos e parênteses no nome do EXE anexado diretamente; ambos os downloads entregam o mesmo executável. [Instalador separado do Softhecom Remoto](https://github.com/vinnivii/CopiadorPdv/releases/download/softhecom-remoto-v1.46.80/softhecomremoto-install.exe).
+
 ## Automações disponíveis
 
 A interface possui uma barra lateral para selecionar **Softshop Caixa**, **Softcom Backup**, **Utilitários** ou **Central Downloads**. Cada página exibe suas próprias opções. O log permanece disponível na área inferior da janela durante todo o processo.
@@ -307,7 +311,7 @@ A versão da aplicação tem uma única origem: `<Version>` em [SoftcomSupportAu
 | AssemblyVersion / FileVersion | Gerados pelo SDK: `2.13.6.0` neste release. |
 | User-Agent | `SoftcomSupportAutomation/2.13.6`, calculado pela aplicação. |
 | Tag Git | `v2.13.6`, apontando para o commit que foi compilado e validado. |
-| Arquivo para o cliente | `CentralAutomação(2.13.6).exe`, gerado em `dist/` e anexado ao GitHub Release correspondente. |
+| Arquivo para o cliente | `CentralAutomação(2.13.6).exe`, gerado em `dist/` e preservado com esse nome dentro do ZIP da release. O asset EXE direto pode ter o nome normalizado pelo GitHub. |
 
 Para uma nova versão:
 
@@ -318,6 +322,8 @@ Para uma nova versão:
 5. Envie a tag ao GitHub. O workflow [verify-release.yml](.github/workflows/verify-release.yml) confere a tag contra `<Version>`, compila e executa os testes em Windows. Só depois cria a cópia padronizada, confere os hashes e envia somente essa cópia como artefato `CentralAutomacao-MAJOR.MINOR.PATCH`. O job por tag baixa esse mesmo artefato, confere novamente nome, arquivo único e SHA-256 antes da publicação. Não recompila nem renomeia outro binário. O job de PR tem acesso de leitura; apenas o job de publicação por tag pode criar uma release. Tags/releases históricas não são alteradas. O instalador remoto `softhecomremoto-install.exe` permanece separado.
 
 Depois de preparar `dist/`, os mesmos testes podem ser executados localmente, sem instalar ou alterar serviços:
+
+Na publicação, confira o download público do EXE contra o SHA-256 registrado no workflow. Quando o GitHub normalizar o nome do asset, publique também `CentralAutomacao-MAJOR.MINOR.PATCH.zip` com uma única entrada `CentralAutomação(MAJOR.MINOR.PATCH).exe`, codificada em UTF-8. O EXE do ZIP deve ter o mesmo hash do EXE publicado, sem recompilar. Confira também o download público do ZIP e registre ambos os hashes nas notas da release.
 
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\Verify-Portable.ps1

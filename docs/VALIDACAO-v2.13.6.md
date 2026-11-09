@@ -80,4 +80,6 @@ Não foi repetida a instalação real na máquina do cliente. Os retornos MSI s�
 
 O teste da senha temporária comprovou aplicação e remoção pelo comando oficial e pelas configurações nativas. Não comprova conexão remota/reinício ou todas as políticas de acesso. Para uso, o técnico deve informar sua própria senha no campo da Central, sem enviá-la pelo chat; a senha temporária do teste não é reutilizada.
 
-Esta correção não publica tag/release nem integra a PR automaticamente. Releases históricas, o asset original do instalador remoto e exclusões locais anteriores permanecem fora destas alterações.
+A [PR #4](https://github.com/vinnivii/CopiadorPdv/pull/4) foi integrada a `master` no commit `6daf2e9840c543921aab8854f6ed3b665e3cc93b`. O responsável autorizou também a publicação e a atualização do GitHub. A tag `v2.13.6` identifica o commit distribuído, com build/testes do workflow antes da publicação; a revisão de documentação para os links de download não altera o código funcional integrado.
+
+A [release v2.13.6](https://github.com/vinnivii/CopiadorPdv/releases/tag/v2.13.6) reúne o EXE e o ZIP que preserva `CentralAutomação(2.13.6).exe`. Os hashes do build publicado e dos downloads conferidos ficam nas notas da release, separados dos builds locais registrados acima. Releases históricas, o asset original do instalador remoto e exclusões locais anteriores permanecem inalterados.
